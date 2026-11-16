@@ -1,0 +1,2137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>netbridgeng</title>
+<!--
+  netbridgeng: a network device's own telemetry, rendered as a ship's bridge.
+  Views (main screen tabs): LLDP / OSPF radar, interface utilization, environment, BGP, OSPF.
+  Side stations: BGP peers, environment, interfaces, syslog. SSH console: the device's own CLI.
+  Data: the server's /ws feed for the session made in the connect dialog; ?demo (or #demo) for sample data.
+-->
+<!-- everything loads from vendor/ (bundled, see vendor/README.md): no internet needed -->
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script src="vendor/xterm.js"></script>
+<script src="vendor/xterm-addon-fit.js"></script>
+<style>
+@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:400;font-display:swap;src:url(vendor/fonts/chakra-petch-latin-400-normal.woff2) format('woff2')}
+@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:600;font-display:swap;src:url(vendor/fonts/chakra-petch-latin-600-normal.woff2) format('woff2')}
+@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:700;font-display:swap;src:url(vendor/fonts/chakra-petch-latin-700-normal.woff2) format('woff2')}
+@font-face{font-family:'Share Tech Mono';font-style:normal;font-weight:400;font-display:swap;src:url(vendor/fonts/share-tech-mono-latin-400-normal.woff2) format('woff2')}
+:root{
+  --bg:#03070b; --glass:rgba(8,20,28,.72); --line:#1d4a5a; --line2:#2f7d93; --pri:#56e0ff; --pri2:#9ff0ff; --dim:#5d8794;
+  --ok:#3dffa0; --warn:#ffb340; --bad:#ff4b4b; --edge:#ffb340; --leaf:#3dffa0; --core:#56e0ff; --other:#c49bff;
+  --alert:0;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--pri2);font:13px/1.35 'Share Tech Mono',ui-monospace,monospace;overflow:hidden}
+body.red{--line:#5a1d1d;--line2:#b03a3a;--pri:#ff7a6a}
+.bridge{position:fixed;inset:0;display:grid;grid-template-columns:minmax(250px,22vw) 1fr minmax(250px,22vw);grid-template-rows:auto 1fr;gap:12px;padding:12px;perspective:1400px}
+/* ---------- frames: bevelled corners, double line (Bulkhead) ---------- */
+.frame{position:relative;background:var(--glass);backdrop-filter:blur(6px);
+  clip-path:polygon(14px 0,calc(100% - 14px) 0,100% 14px,100% calc(100% - 14px),calc(100% - 14px) 100%,14px 100%,0 calc(100% - 14px),0 14px)}
+.frame::before,.frame::after{content:'';position:absolute;pointer-events:none;
+  clip-path:inherit;border:1px solid var(--line2)}
+.frame::before{inset:0}
+.frame::after{inset:4px;border-color:var(--line);clip-path:polygon(11px 0,calc(100% - 11px) 0,100% 11px,100% calc(100% - 11px),calc(100% - 11px) 100%,11px 100%,0 calc(100% - 11px),0 11px)}
+.frame .ttl{display:flex;justify-content:space-between;align-items:baseline;padding:10px 16px 6px;font:600 12px 'Chakra Petch',sans-serif;letter-spacing:.24em;color:var(--pri);text-transform:uppercase}
+.frame .ttl small{font:11px 'Share Tech Mono',monospace;letter-spacing:.06em;color:var(--dim)}
+.frame .body{padding:2px 16px 14px}
+/* ---------- header ---------- */
+header.frame{grid-column:1/-1;display:flex;align-items:center;gap:22px;padding:10px 20px;flex-wrap:wrap}
+header h1{margin:0;font:700 20px 'Chakra Petch',sans-serif;letter-spacing:.2em;color:var(--pri)}
+header .k{color:var(--dim);font-size:11px;letter-spacing:.12em}
+header .v{color:var(--pri2)}
+header .spacer{flex:1}
+.chip{padding:3px 10px;border:1px solid var(--line2);font-size:11px;letter-spacing:.16em}
+.chip.live{color:var(--ok);border-color:var(--ok)} .chip.demo{color:var(--warn);border-color:var(--warn)}
+.status{font:700 12px 'Chakra Petch',sans-serif;letter-spacing:.3em;padding:4px 12px;border:1px solid var(--ok);color:var(--ok)}
+.status.yellow{border-color:var(--warn);color:var(--warn)}
+.status.red{border-color:var(--bad);color:var(--bad);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.35}}
+/* ---------- side consoles: angled glass, wrapping the viewscreen ---------- */
+.side{display:flex;flex-direction:column;gap:12px;min-height:0;transform-style:preserve-3d}
+.side.l{transform:rotateY(7deg) scale(.92);transform-origin:right center}
+.side.r{transform:rotateY(-7deg) scale(.92);transform-origin:left center}
+.side .frame{flex:1;min-height:0;overflow:hidden;cursor:pointer;transition:filter .2s}
+.side .frame:hover{filter:brightness(1.25)}
+.side .frame.hot{animation:hot 1.2s ease-in-out infinite}
+@keyframes hot{50%{filter:brightness(1.6) drop-shadow(0 0 6px var(--bad))}}
+/* ---------- viewscreen ---------- */
+.main{position:relative;min-height:0}
+.main canvas{position:absolute;inset:0;width:100%!important;height:100%!important;clip-path:inherit}
+.main .ttl{position:absolute;left:0;right:0;top:0;z-index:2;pointer-events:none}
+.tabs{display:inline-flex;gap:6px;pointer-events:auto}
+.tabs button{font:600 11.5px 'Chakra Petch',sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);background:rgba(3,10,14,.6);border:1px solid var(--line);padding:3px 10px;cursor:pointer}
+.tabs button.on{color:var(--pri);border-color:var(--pri);box-shadow:0 0 8px rgba(86,224,255,.25) inset}
+.main .ttl{flex-wrap:wrap;gap:4px 12px}
+.main .ttl small{pointer-events:none;text-align:right;flex:1;min-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side .frame.sel{filter:brightness(1.3)}
+.nosess{display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;max-width:520px;width:86%;padding:22px 26px;background:rgba(3,10,14,.92);border:1px solid var(--line2);text-align:center}
+.nosess h3{margin:0 0 10px;font:700 16px 'Chakra Petch',sans-serif;letter-spacing:.24em;color:var(--warn);text-transform:uppercase}
+.nosess p{margin:8px 0;line-height:1.5}
+.detail-btn{display:none;margin-left:8px}
+body.v-therm .detail-btn{display:inline-block}
+.tdetail{position:absolute;left:14px;right:14px;top:66px;bottom:14px;z-index:4;display:none;overflow:auto;padding:10px 14px 14px;background:rgba(3,10,14,.93);border:1px solid var(--line2)}
+.tdetail.on{display:block}
+.tdetail h4{margin:12px 0 4px;font:600 12px 'Chakra Petch',sans-serif;letter-spacing:.24em;color:var(--pri);text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:3px}
+.tdetail h4 small{color:var(--dim);letter-spacing:.08em;font:11px 'Share Tech Mono',monospace;margin-left:8px}
+.trow{display:grid;grid-template-columns:minmax(200px,1.6fr) 64px minmax(160px,2.2fr) 150px 96px;gap:10px;align-items:center;font-size:12px;padding:3px 0;border-bottom:1px dotted #142b34}
+.trow .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--pri2)}
+.trow .t{text-align:right;font-weight:bold}
+.tbar{position:relative;height:9px;background:#0c2129}
+.tbar i{position:absolute;left:0;top:0;bottom:0}
+.tbar b{position:absolute;top:-3px;bottom:-3px;width:2px}
+.trow .hd{font-size:11px;color:var(--dim);text-align:right}
+.trow svg{display:block}
+.thead{font-size:10.5px;color:var(--dim);letter-spacing:.12em;border-bottom:1px solid var(--line)}
+@media (max-width:900px){.trow{grid-template-columns:1fr 56px;}.trow .tbar,.trow .hd,.trow svg{grid-column:1/-1}}
+.legend{position:absolute;left:18px;bottom:16px;z-index:2;font-size:11px;color:var(--dim);line-height:1.6;pointer-events:none}
+.legend b{display:inline-block;width:9px;height:9px;margin-right:6px;transform:rotate(45deg)}
+.scan{position:absolute;right:18px;bottom:16px;z-index:3;width:300px;max-width:calc(100% - 36px);display:none;padding:12px 14px;background:rgba(3,10,14,.9);border:1px solid var(--line2)}
+.scan h3{margin:0 0 6px;font:700 14px 'Chakra Petch',sans-serif;letter-spacing:.12em;color:var(--pri)}
+.scan .row{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dotted #183440;padding:2px 0}
+.scan .row span:first-child{color:var(--dim)}
+.toast{position:absolute;left:50%;top:44px;transform:translateX(-50%);z-index:3;font:700 13px 'Chakra Petch',sans-serif;letter-spacing:.24em;color:var(--warn);text-shadow:0 0 10px currentColor;opacity:0;transition:opacity .4s;pointer-events:none;white-space:nowrap}
+.toast.on{opacity:1}
+body.red .viewtint{opacity:1}
+.viewtint{position:absolute;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse at center,transparent 45%,rgba(255,40,40,.22));opacity:0;transition:opacity .6s;animation:redpulse 2s ease-in-out infinite}
+@keyframes redpulse{50%{filter:brightness(.4)}}
+/* ---------- station contents ---------- */
+.row{display:flex;justify-content:space-between;gap:8px}
+.mini{font-size:11px;color:var(--dim)}
+.bar{position:relative;height:6px;background:#0c2129;margin:3px 0 6px}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:var(--pri)}
+.bar i.o{background:var(--other)}
+.bar.dual i{height:3px} .bar.dual i.o{top:3px}
+.ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+.shield{display:block;margin:0 auto 6px}
+.peers .row{font-size:11.5px;padding:1px 0}
+.log{font-size:11px;line-height:1.45;max-height:100%;overflow:hidden}
+.log div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.log .s3,.log .s2,.log .s1,.log .s0{color:var(--bad)} .log .s4{color:var(--warn)} .log .s5{color:var(--pri2)} .log .s6,.log .s7{color:var(--dim)}
+/* ---------- expanded station ---------- */
+.expand{position:fixed;inset:8% 14%;z-index:20;display:none}
+.expand .ttl{padding-right:52px}
+.expand .body{max-height:calc(100% - 50px);overflow:auto;font-size:14px}
+.expand.on{display:block}
+.closex{position:absolute;right:18px;top:8px;z-index:2;cursor:pointer;color:var(--pri);font:700 16px 'Chakra Petch'}
+/* xterm.js 5.3.0 stylesheet (MIT), inlined */
+.xterm { cursor: text; position: relative; user-select: none; -ms-user-select: none; -webkit-user-select: none; } .xterm.focus, .xterm:focus { outline: none; } .xterm .xterm-helpers { position: absolute; top: 0; z-index: 5; } .xterm .xterm-helper-textarea { padding: 0; border: 0; margin: 0; position: absolute; opacity: 0; left: -9999em; top: 0; width: 0; height: 0; z-index: -5; white-space: nowrap; overflow: hidden; resize: none; } .xterm .composition-view { background: #000; color: #FFF; display: none; position: absolute; white-space: nowrap; z-index: 1; } .xterm .composition-view.active { display: block; } .xterm .xterm-viewport { background-color: #000; overflow-y: scroll; cursor: default; position: absolute; right: 0; left: 0; top: 0; bottom: 0; } .xterm .xterm-screen { position: relative; } .xterm .xterm-screen canvas { position: absolute; left: 0; top: 0; } .xterm .xterm-scroll-area { visibility: hidden; } .xterm-char-measure-element { display: inline-block; visibility: hidden; position: absolute; top: 0; left: -9999em; line-height: normal; } .xterm.enable-mouse-events { cursor: default; } .xterm.xterm-cursor-pointer, .xterm .xterm-cursor-pointer { cursor: pointer; } .xterm.column-select.focus { cursor: crosshair; } .xterm .xterm-accessibility, .xterm .xterm-message { position: absolute; left: 0; top: 0; bottom: 0; right: 0; z-index: 10; color: transparent; pointer-events: none; } .xterm .live-region { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; } .xterm-dim { opacity: 1 !important; } .xterm-underline-1 { text-decoration: underline; } .xterm-underline-2 { text-decoration: double underline; } .xterm-underline-3 { text-decoration: wavy underline; } .xterm-underline-4 { text-decoration: dotted underline; } .xterm-underline-5 { text-decoration: dashed underline; } .xterm-overline { text-decoration: overline; } .xterm-overline.xterm-underline-1 { text-decoration: overline underline; } .xterm-overline.xterm-underline-2 { text-decoration: overline double underline; } .xterm-overline.xterm-underline-3 { text-decoration: overline wavy underline; } .xterm-overline.xterm-underline-4 { text-decoration: overline dotted underline; } .xterm-overline.xterm-underline-5 { text-decoration: overline dashed underline; } .xterm-strikethrough { text-decoration: line-through; } .xterm-screen .xterm-decoration-container .xterm-decoration { z-index: 6; position: absolute; } .xterm-screen .xterm-decoration-container .xterm-decoration.xterm-decoration-top-layer { z-index: 7; } .xterm-decoration-overview-ruler { z-index: 8; position: absolute; top: 0; right: 0; pointer-events: none; } .xterm-decoration-top { z-index: 2; position: relative; }
+/* ---------- SSH console: a solid bevelled slab, extruded toward the viewer, floating over the bridge ---------- */
+body.term-open .bridge{filter:brightness(.5) saturate(.75) blur(1px);transition:filter .35s}
+.bridge{transition:filter .35s}
+.term3d{position:fixed;z-index:40;left:50%;top:12%;width:min(1000px,88vw);height:min(580px,72vh);transform:translateX(-50%);display:none;
+  filter:drop-shadow(1px 1px 0 #2a7a90) drop-shadow(1px 1px 0 #1e5f71) drop-shadow(1px 1px 0 #194f5f) drop-shadow(1px 1px 0 #154350) drop-shadow(1px 1px 0 #113844) drop-shadow(1px 1px 0 #0e2e38) drop-shadow(1px 1px 0 #0b252d) drop-shadow(1px 1px 0 #091e25) drop-shadow(0 26px 34px rgba(0,0,0,.75)) drop-shadow(0 0 22px rgba(86,224,255,.18))}
+.term3d.on{display:block;animation:tin .5s cubic-bezier(.2,.9,.25,1)}
+.term3d.placed{transform:none}
+@keyframes tin{from{opacity:0;transform:translateX(-50%) translateY(40px) perspective(1400px) rotateX(22deg) scale(.9)}to{opacity:1;transform:translateX(-50%)}}
+.tslab{position:absolute;inset:0;
+  clip-path:polygon(22px 0,calc(100% - 22px) 0,100% 22px,100% calc(100% - 22px),calc(100% - 22px) 100%,22px 100%,0 calc(100% - 22px),0 22px);
+  background:
+    radial-gradient(circle at 30px 30px,#5fb6c8 0 2px,#0b2a33 2.5px 4px,transparent 4.5px),
+    radial-gradient(circle at calc(100% - 30px) 30px,#5fb6c8 0 2px,#0b2a33 2.5px 4px,transparent 4.5px),
+    radial-gradient(circle at 30px calc(100% - 30px),#5fb6c8 0 2px,#0b2a33 2.5px 4px,transparent 4.5px),
+    radial-gradient(circle at calc(100% - 30px) calc(100% - 30px),#5fb6c8 0 2px,#0b2a33 2.5px 4px,transparent 4.5px),
+    repeating-linear-gradient(90deg,rgba(255,255,255,.018) 0 2px,transparent 2px 5px),
+    linear-gradient(165deg,#1d5566 0%,#10343f 18%,#0a222b 55%,#071a21 80%,#0f3440 100%)}
+.tslab::before{content:'';position:absolute;inset:0;pointer-events:none;clip-path:inherit;
+  background:linear-gradient(180deg,rgba(159,240,255,.55),rgba(159,240,255,0) 2px) top/100% 2px no-repeat,linear-gradient(90deg,rgba(159,240,255,.35),rgba(159,240,255,0) 2px) left/2px 100% no-repeat}
+.tslab::after{content:'';position:absolute;inset:6px;pointer-events:none;border:1px solid rgba(86,224,255,.35);
+  clip-path:polygon(17px 0,calc(100% - 17px) 0,100% 17px,100% calc(100% - 17px),calc(100% - 17px) 100%,17px 100%,0 calc(100% - 17px),0 17px)}
+.tconbar{position:absolute;left:44px;right:44px;top:10px;height:30px;display:flex;align-items:center;gap:12px;cursor:move;user-select:none;
+  font:600 12px 'Chakra Petch',sans-serif;letter-spacing:.24em;color:var(--pri2);text-transform:uppercase}
+.tconbar .lamp{width:9px;height:9px;border-radius:50%;background:#3a5560;box-shadow:inset 0 0 2px #000}
+.tconbar .lamp.on{background:#3dffa0;box-shadow:0 0 8px #3dffa0}.tconbar .lamp.err{background:#ff4b4b;box-shadow:0 0 8px #ff4b4b}.tconbar .lamp.wait{background:#ffb340;box-shadow:0 0 8px #ffb340;animation:blink 1s steps(2) infinite}
+.tconbar .tst{flex:1;font:11px 'Share Tech Mono',monospace;letter-spacing:.12em;color:var(--dim)}
+.tbtn{font:600 10.5px 'Chakra Petch',sans-serif;letter-spacing:.2em;color:var(--pri);background:linear-gradient(#123744,#0a2129);border:1px solid #2f7d93;padding:3px 10px;cursor:pointer;box-shadow:0 2px 0 #06151b,inset 0 1px 0 rgba(159,240,255,.25)}
+.tbtn:active{transform:translateY(1px);box-shadow:0 1px 0 #06151b}
+.tscreen{position:absolute;left:22px;right:22px;top:46px;bottom:30px;background:#02090d;border:1px solid #2f7d93;
+  box-shadow:inset 0 0 0 3px #041219,inset 0 3px 8px rgba(0,0,0,.9),inset 0 0 40px rgba(86,224,255,.08),0 0 0 1px #071a21}
+.tscreen #t-body{position:absolute;inset:8px 6px 6px 10px}
+.tscreen::after{content:'';position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}
+.tfoot{position:absolute;left:44px;right:44px;bottom:7px;height:18px;display:flex;justify-content:space-between;font:10.5px 'Share Tech Mono',monospace;letter-spacing:.14em;color:#4f8a99}
+.tgrip{position:absolute;right:6px;bottom:6px;width:22px;height:22px;cursor:nwse-resize;z-index:2;
+  background:linear-gradient(135deg,transparent 0 55%,#56e0ff 55% 60%,transparent 60% 70%,#56e0ff 70% 75%,transparent 75% 85%,#56e0ff 85% 90%,transparent 90%)}
+.xterm .xterm-viewport{background:transparent!important}
+.xterm-viewport::-webkit-scrollbar{width:7px}.xterm-viewport::-webkit-scrollbar-thumb{background:#1d4a5a}
+.chip.tchip{cursor:pointer;color:var(--pri);background:transparent;font:inherit;font-size:11px;letter-spacing:.16em}
+.connect{position:fixed;z-index:45;left:50%;top:50%;transform:translate(-50%,-50%);width:min(440px,92vw);display:none;
+  filter:drop-shadow(1px 1px 0 #2a7a90) drop-shadow(1px 1px 0 #1e5f71) drop-shadow(1px 1px 0 #194f5f) drop-shadow(1px 1px 0 #154350) drop-shadow(1px 1px 0 #113844) drop-shadow(1px 1px 0 #0e2e38) drop-shadow(0 22px 30px rgba(0,0,0,.75))}
+.connect.on{display:block}
+.connect form{position:relative;padding:26px 34px 22px}
+.connect h3{margin:0 0 6px;font:700 16px 'Chakra Petch',sans-serif;letter-spacing:.3em;color:var(--pri);text-transform:uppercase}
+.connect label{display:block;margin:10px 0 0;font:600 10.5px 'Chakra Petch',sans-serif;letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+.connect input:not([type=checkbox]),.connect select{display:block;width:100%;margin-top:4px;padding:7px 9px;background:#02090d;border:1px solid #2f7d93;color:var(--pri2);font:13px 'Share Tech Mono',monospace;outline:none;box-shadow:inset 0 2px 5px rgba(0,0,0,.7)}
+.connect input:focus,.connect select:focus{border-color:var(--pri)}
+.connect label.cb{display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:.04em;font:12px 'Share Tech Mono',monospace;color:var(--pri2)}
+.cx-actions{display:flex;gap:10px;margin-top:16px}
+#cx-status{margin-top:10px;min-height:1.2em}
+.cx-foot{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+/* ---------- phone: stack, no angle ---------- */
+@media (max-width:900px){
+  html,body{overflow:auto}
+  .bridge{position:static;display:flex;flex-direction:column;perspective:none}
+  .side.l,.side.r{transform:none}
+  .main{height:62vh;order:-1}
+  header.frame{order:-2}
+  .side .frame{min-height:180px}
+  .expand{inset:4%}
+  .legend{display:none}
+  .main .ttl .tabs{flex-wrap:wrap}
+  .tabs button{font-size:10px;letter-spacing:.1em;padding:3px 7px}
+  .term3d{left:2vw!important;top:8vh!important;width:96vw!important;height:70vh!important;transform:none}
+}
+</style>
+</head>
+<body>
+<div class="bridge">
+  <header class="frame">
+    <h1 id="h-name">—</h1>
+    <span><span class="k">MODEL </span><span class="v" id="h-model">—</span></span>
+    <span><span class="k">EOS </span><span class="v" id="h-ver">—</span></span>
+    <span><span class="k">UPTIME </span><span class="v" id="h-up">—</span></span>
+    <span><span class="k">CPU </span><span class="v" id="h-cpu">—</span></span>
+    <span><span class="k">POLL </span><span class="v" id="h-poll">—</span></span>
+    <span class="spacer"></span>
+    <button class="chip tchip" id="term-btn" title="SSH terminal to this device">&gt;_ TERMINAL</button>
+    <span class="chip" id="h-mode">—</span>
+    <span class="k" id="h-why" style="max-width:34vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <span class="status" id="h-status" style="border-color:var(--line2);color:var(--dim)">NO DATA</span>
+  </header>
+
+  <div class="side l">
+    <section class="frame" data-st="shields"><div class="ttl">BGP Peers <small id="sh-sum">—</small></div><div class="body" id="st-shields"></div></section>
+    <section class="frame" data-st="eng"><div class="ttl">Environment <small id="en-sum">—</small></div><div class="body" id="st-eng"></div></section>
+  </div>
+
+  <section class="frame main" id="main">
+    <div class="ttl"><span class="tabs"><button data-v="lldp" class="on">LLDP · OSPF</button><button data-v="util">Utilization</button><button data-v="therm">Environment</button><button data-v="bgp">BGP</button><button data-v="ospf">OSPF</button></span><span class="tabs"><button class="detail-btn" id="detail-btn">Detail ▾</button></span> <small id="se-sum">—</small></div>
+    <div class="viewtint"></div>
+    <div class="toast" id="toast"></div>
+    <div class="legend" id="lg-util" style="display:none">
+      <div><b style="background:#56e0ff"></b>IN · left column</div>
+      <div><b style="background:#c49bff"></b>OUT · right column</div>
+      <div><b style="background:#ffb340"></b>&gt; 50%  <b style="background:#ff4b4b;margin-left:10px"></b>&gt; 80%</div>
+      <div>height: utilization (√ scale) · depth: last 40 polls · red sparks: discards</div>
+    </div>
+    <div class="legend" id="lg-therm" style="display:none">
+      <div><b style="background:#56e0ff"></b>cool  <b style="background:#3dffa0;margin-left:10px"></b>normal  <b style="background:#ffb340;margin-left:10px"></b>at setpoint (fans ramp)  <b style="background:#ff4b4b;margin-left:10px"></b>at alert limit</div>
+      <div>gauge rings: setpoint · alert · critical · trail: last 40 polls</div>
+      <div>fans spin at reported speed · PSUs glow with draw · particles: airflow</div>
+      <div>sensors placed by name group (chip, CPU, PSU, front, rear), not board position</div>
+    </div>
+    <div class="legend" id="lg-bgp" style="display:none">
+      <div><b style="background:#3dffa0"></b>iBGP · inner orbit  <b style="background:#ffb340;margin-left:10px"></b>eBGP · outer orbit</div>
+      <div><b style="background:#56e0ff"></b>shield segment: holding  <b style="background:#ffb340;margin-left:10px"></b>&gt;10% prefix loss  <b style="background:#ff4b4b;margin-left:10px"></b>down</div>
+      <div>column: prefixes received (log, 1M = full) · arc: session uptime (log, 1 year = full)</div>
+      <div>beam particles: UPDATE messages in (cyan) and out (violet) · shockwave: state change</div>
+    </div>
+    <div class="legend" id="lg-ospf" style="display:none">
+      <div><b style="background:#3dffa0"></b>FULL  <b style="background:#ffb340;margin-left:10px"></b>transitional or retransmitting  <b style="background:#ff4b4b;margin-left:10px"></b>adjacency lost</div>
+      <div>rings: areas (backbone level, others below) · bearing: port order, as on the LLDP radar</div>
+      <div>sleeve: BFD (cyan up, red down, none if admin-down) · pulse: adjacency held</div>
+      <div>beads: state changes (red = since page opened) · amber sparks: retransmits this poll · column: OSPF routes by type</div>
+    </div>
+    <div class="legend" id="lg-lldp">
+      <div><b style="background:var(--edge)"></b>EDGE / BORDER · above</div>
+      <div><b style="background:var(--core)"></b>SPINE / CORE · above</div>
+      <div><b style="background:var(--leaf)"></b>LEAF / TOR · below</div>
+      <div><b style="background:var(--other)"></b>OTHER · on the plane</div>
+      <div>bearing: port order · range: tier · ring: OSPF FULL · flow: traffic</div>
+    </div>
+    <div class="scan" id="scan"></div>
+    <div class="tdetail" id="tdetail"></div>
+    <div class="nosess" id="nosess"></div>
+  </section>
+
+  <div class="side r">
+    <section class="frame" data-st="drive"><div class="ttl">Interfaces <small id="dr-sum">—</small></div><div class="body" id="st-drive"></div></section>
+    <section class="frame" data-st="comms"><div class="ttl">Syslog <small>show logging</small></div><div class="body log" id="st-comms"></div></section>
+  </div>
+</div>
+<div class="connect" id="connect">
+  <div class="tslab"></div>
+  <form id="cx-form" autocomplete="on">
+    <h3>Connect</h3>
+    <div class="mini" id="cx-why"></div>
+    <label>Host<input id="cx-host" name="host" placeholder="switch.example.net" spellcheck="false"></label>
+    <label>Username<input id="cx-user" name="username" autocomplete="username" spellcheck="false"></label>
+    <label>Auth<select id="cx-auth"><option value="server">SSH key on the server</option><option value="upload">Upload a key file</option><option value="password">Password</option></select></label>
+    <div class="mini" id="cx-keyhint"></div>
+    <label id="cx-pass-row">Password<input id="cx-pass" type="password" autocomplete="current-password"></label>
+    <label id="cx-key-row">Key file<input id="cx-key" type="file"></label>
+    <label class="cb"><input id="cx-legacy" type="checkbox"> Legacy SSH (EOS &lt; 4.25 / OpenSSH &lt; 7.2)</label>
+    <div class="cx-actions"><button class="tbtn" id="cx-go" type="submit">CONNECT ▸</button><button class="tbtn" id="cx-cancel" type="button">CANCEL</button></div>
+    <div class="mini" id="cx-status"></div>
+    <div class="mini cx-foot">Arista EOS collector · add <b>?demo</b> to the address for sample data</div>
+  </form>
+</div>
+<div class="term3d" id="term3d">
+  <div class="tslab"></div>
+  <div class="tconbar" id="t-bar"><span class="lamp" id="t-lamp"></span><span id="t-title">SSH</span><span class="tst" id="t-status">—</span>
+    <button class="tbtn" id="t-reconnect">RECONNECT</button><button class="tbtn" id="t-close">CLOSE</button></div>
+  <div class="tscreen"><div id="t-body"></div></div>
+  <div class="tfoot"><span id="t-dims">—</span><span id="t-mode">—</span></div>
+  <div class="tgrip" id="t-grip" title="resize"></div>
+</div>
+<section class="frame expand" id="expand"><span class="closex" id="closex">✕</span><div class="ttl" id="ex-ttl"></div><div class="body" id="ex-body"></div></section>
+
+<script>
+'use strict';
+/* =====================================================================================================
+   helpers
+   ===================================================================================================== */
+const $ = id => document.getElementById(id);
+const Q = new URLSearchParams(location.search);
+const get = (o, p, d) => { for (const k of p.split('.')) { if (o == null || !(k in o)) return d; o = o[k]; } return o ?? d; };
+const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+const shortName = n => (n || '').split('.')[0];
+const shortPort = p => (p || '').replace(/^Ethernet/, 'Et').replace(/^Port-Channel/, 'Po').replace(/^Management/, 'Ma');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function fmtBps(b) { if (!b || b < 1) return '0'; const u = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps']; let i = 0; while (b >= 1000 && i < 4) { b /= 1000; i++; } return b.toFixed(b < 10 ? 2 : 1) + ' ' + u[i]; }
+function shortTs(t) { const m = String(t || '').match(/^\d{4}-(\d\d-\d\d)T(\d\d:\d\d:\d\d)/); return m ? `${m[1]} ${m[2]}` : t; }
+function fmtSpeed(b) { if (!b) return '—'; return b >= 1e9 ? (b / 1e9) + 'G' : (b / 1e6) + 'M'; }
+function fmtUp(s) { s = Math.floor(s || 0); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d}d ${h}h` : `${h}h ${m}m`; }
+function role(name) {
+  const n = (name || '').toLowerCase();
+  if (/edge|border|bdr|pe\d|transit/.test(n)) return 'edge';
+  if (/spine|core|agg|sp\d/.test(n)) return 'core';
+  if (/tor|leaf|lf\d|access|srv|server|host/.test(n)) return 'leaf';
+  return 'other';
+}
+const isIP = h => /^[\d.]+$|:/.test(h || '');
+function devName(d) {
+  const n = Q.get('name') || get(d, 'version.hostname', '') || get(d, 'meta.hostname', '');
+  return (isIP(n) ? n : shortName(n) || '—').toUpperCase();
+}
+const ROLE_COL = { edge: 0xffb340, core: 0x56e0ff, leaf: 0x3dffa0, other: 0xc49bff };
+
+/* =====================================================================================================
+   state: the latest nethuds message, plus rates derived from counter deltas between messages
+   ===================================================================================================== */
+let D = null, prevCounters = null, prevT = 0;
+const RATES = {};
+const HLEN = 40, HIST = {};   // port -> newest-first [{in, out, inDisc, outDisc}], one entry per poll   // port -> {in, out, inDisc, outDisc}  (bps, per second)
+function ingest(msg) {
+  const t = get(msg, 'meta.timestamp', Date.now() / 1000);
+  const c = get(msg, 'counters.interfaces', null);
+  if (c && prevCounters && t > prevT) {
+    const dt = t - prevT;
+    for (const [p, v] of Object.entries(c)) {
+      const o = prevCounters[p]; if (!o) continue;
+      const d = (a, b) => Math.max(0, (a || 0) - (b || 0));
+      RATES[p] = { in: d(v.inOctets, o.inOctets) * 8 / dt, out: d(v.outOctets, o.outOctets) * 8 / dt,
+                   inDisc: d(v.inDiscards, o.inDiscards) / dt, outDisc: d(v.outDiscards, o.outDiscards) / dt };
+    }
+  }
+  if (c && prevCounters && t > prevT) for (const p of Object.keys(c)) if (RATES[p]) { (HIST[p] = HIST[p] || []).unshift({ ...RATES[p] }); if (HIST[p].length > HLEN) HIST[p].pop(); }
+  if (c) { prevCounters = JSON.parse(JSON.stringify(c)); prevT = t; }
+  if (typeof THIST !== 'undefined') for (const sn of get(msg, 'environment.sensors', [])) { const k = `${sn.id}:${sn.description}`; (THIST[k] = THIST[k] || []).unshift(sn.temp); if (THIST[k].length > HLEN) THIST[k].pop(); }
+  D = msg;
+  renderAll();
+}
+
+/* =====================================================================================================
+   data source: the server's /ws feed for this tab's session (made in the connect dialog), or ?demo
+   ===================================================================================================== */
+let sessionId = Q.get('session');
+try { if (sessionId) sessionStorage.setItem('bridge_session_id', sessionId); else sessionId = sessionStorage.getItem('bridge_session_id'); } catch (e) {}
+const served = /^https?:$/.test(location.protocol) && !/claude|usercontent/.test(location.host);
+let demoOn = false;
+const wantDemo = Q.has('demo') || location.hash === '#demo';
+function noSession(why) {
+  $('h-mode').textContent = 'NO SESSION'; $('h-mode').className = 'chip';
+  if (served) { Connect.show(why); return; }
+  $('nosess').innerHTML = `<h3>No device</h3><p>This page needs the netbridgeng server to reach a device. Run <b>python -m netbridgeng</b> and open it from there.</p><p class="mini">To see it with sample data, add <b>?demo</b> (or <b>#demo</b> where a query string cannot be passed).</p>`;
+  $('nosess').style.display = 'block';
+}
+function goDemo(why) {
+  if (demoOn) return; demoOn = true;
+  $('h-mode').textContent = why || 'DEMO DATA'; $('h-mode').className = 'chip demo';
+  setTimeout(startDemo, 0);
+}
+function startLive() {
+  $('h-mode').textContent = 'CONNECTING'; $('h-mode').className = 'chip';
+  const base = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
+  (function connect() {
+    const ws = new WebSocket(`${base}/ws?session=${sessionId}`);
+    ws.onmessage = e => {
+      try {
+        const m = JSON.parse(e.data);
+        if (m.error) { ws.onclose = null; try { sessionStorage.removeItem('bridge_session_id'); } catch (x) {} sessionId = null; noSession('That session has ended'); return; }
+        if (m._progress) { const g = m._progress; $('h-poll').textContent = `collecting ${g.command || ''} ${(g.index || 0) + (g.phase === 'done' ? 1 : 0)}/${g.total || '?'}`; if (!D) $('h-mode').textContent = 'COLLECTING'; return; }
+        $('h-mode').textContent = 'LIVE'; $('h-mode').className = 'chip live';
+        ingest(m);
+      } catch (x) { console.error(x); }
+    };
+    ws.onclose = () => { if (!demoOn && sessionId) setTimeout(connect, 3000); };
+  })();
+}
+
+/* ---------- connect dialog: posts to /api/connect, which tests SSH before it makes the session ---------- */
+const Connect = (() => {
+  const el = $('connect');
+  async function show(why) {
+    $('cx-why').textContent = why || '';
+    el.classList.add('on'); document.body.classList.add('term-open');
+    try {   // pre-fill from config.yaml
+      const r = await fetch('/api/defaults'); if (r.ok) { const d = await r.json();
+        if (!$('cx-host').value) $('cx-host').value = d.host || ''; if (!$('cx-user').value) $('cx-user').value = d.username || '';
+        $('cx-legacy').checked = !!d.legacy_ssh; $('cx-keyhint').textContent = d.key_file ? `server key: ${d.key_file}` : ''; }
+    } catch (e) {}
+    setTimeout(() => ($('cx-host').value ? $('cx-user') : $('cx-host')).focus(), 50);
+  }
+  function hide() { el.classList.remove('on'); document.body.classList.remove('term-open'); }
+  function auth() { const a = $('cx-auth').value; $('cx-pass-row').style.display = a === 'password' ? '' : 'none'; $('cx-key-row').style.display = a === 'upload' ? '' : 'none'; $('cx-keyhint').style.display = a === 'server' ? '' : 'none'; }
+  $('cx-auth').onchange = auth; auth();
+  $('cx-form').onsubmit = async e => {
+    e.preventDefault();
+    const btn = $('cx-go'), st = $('cx-status');
+    const body = { host: $('cx-host').value.trim(), username: $('cx-user').value.trim(), legacy_ssh: $('cx-legacy').checked };
+    if (sessionId) body.session_id = sessionId;
+    const a = $('cx-auth').value;
+    if (a === 'password') body.password = $('cx-pass').value;
+    if (a === 'upload') { const f = $('cx-key').files[0]; if (!f) { st.textContent = 'Choose a key file'; return; } body.key_text = await f.text(); }
+    if (!body.host || !body.username) { st.textContent = 'Host and username are required'; return; }
+    btn.disabled = true; st.className = 'mini'; st.textContent = `Opening SSH to ${body.host}…`;
+    try {
+      const r = await fetch('/api/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json();
+      if (d.status !== 'ok') throw new Error(d.message || 'connect failed');
+      try { sessionStorage.setItem('bridge_session_id', d.session_id); } catch (x) {}
+      st.textContent = `Connected to ${d.host}. Loading…`;
+      location.replace(location.pathname);   // a clean page for the new device: no history from the last one
+    } catch (err) { st.className = 'mini bad'; st.textContent = String(err.message || err); btn.disabled = false; }
+  };
+  $('cx-cancel').onclick = () => { if (D) hide(); };
+  return { show, hide };
+})();
+if (served && !wantDemo) { const b = document.createElement('button'); b.className = 'chip tchip'; b.textContent = '⇄ CONNECT'; b.title = 'Connect to a device'; b.onclick = () => Connect.show(); $('h-mode').before(b); }
+if (!wantDemo && served && sessionId) startLive();
+else if (wantDemo) goDemo('DEMO DATA');
+else noSession();
+
+/* =====================================================================================================
+   demo (?demo): a fictional spine in a spine/leaf fabric, ticking every 3 s, with a leaf link loss and a BGP flap now and then
+   ===================================================================================================== */
+function startDemo() {
+  const host = 'spine-01.dc1.example.net';
+  const nei = [];   // [local port, device, remote port, speed bps, type, desc]
+  const add = (p, dev, rp, sp, ty, ds) => nei.push({ p, dev, rp, sp, ty, ds });
+  add('Ethernet49/1', 'border-leaf-01.dc1.example.net', 'Ethernet49/1', 100e9, '100GBASE-LR4', 'border-leaf-01 Et49/1');
+  add('Ethernet50/1', 'border-leaf-02.dc1.example.net', 'Ethernet49/1', 100e9, '100GBASE-LR4', 'border-leaf-02 Et49/1');
+  add('Ethernet51/1', 'super-spine-01.dc1.example.net', 'Ethernet5/1', 100e9, '100GBASE-SR4', 'super-spine-01 Et5/1');
+  add('Ethernet52/1', 'super-spine-02.dc1.example.net', 'Ethernet5/1', 100e9, '100GBASE-SR4', 'super-spine-02 Et5/1');
+  add('Ethernet53/1', 'spine-02.dc1.example.net', 'Ethernet53/1', 100e9, '100GBASE-CR4', 'spine-02 inter-spine');
+  add('Ethernet54/1', 'spine-02.dc1.example.net', 'Ethernet54/1', 100e9, '100GBASE-CR4', 'spine-02 inter-spine');
+  for (let i = 1; i <= 12; i++) add(`Ethernet${i * 2 - 1}/1`, `leaf-${100 + i}.dc1.example.net`, 'Ethernet49/1', i <= 8 ? 40e9 : 25e9, i <= 8 ? '40GBASE-SR4' : '25GBASE-SR', `leaf-${100 + i} uplink`);
+  add('Ethernet31/1', 'k8s-worker-07.dc1.example.net', 'ens1f0', 10e9, '10GBASE-SR', 'k8s-worker-07');
+  add('Ethernet33/1', 'k8s-worker-08.dc1.example.net', 'ens1f0', 10e9, '10GBASE-SR', 'k8s-worker-08');
+  add('Ethernet35/1', 'flow-collector-01.dc1.example.net', 'eth1', 10e9, '10GBASE-SR', 'flow collector');
+  add('Ethernet47/1', 'oob-mgmt-01.dc1.example.net', 'Gi0/48', 1e9, '1000BASE-T', 'oob uplink');
+  const ospfOn = new Set(nei.filter(n => ['edge', 'core', 'leaf'].includes(role(n.dev)) && !/spine-02|k8s|collector|oob/.test(n.dev)).map(n => n.p));
+  const oc = {}; nei.forEach((n, i) => oc[n.p] = { rt: Math.floor(Math.random() * 40), sc: 6 + 2 * (i % 3), area: /leaf-11[12]/.test(n.dev) ? '0.0.0.10' : '0.0.0.0' });
+  const load = {}; nei.forEach(n => load[n.p] = { u: role(n.dev) === 'edge' ? .35 : role(n.dev) === 'core' ? .28 : .12 + Math.random() * .25, ph: Math.random() * 6 });
+  load['Ethernet5/1'].u = .62; load['Ethernet9/1'].u = .5; load['Ethernet9/1'].burst = true; load['Ethernet31/1'].u = .7;
+  const counters = {}; nei.forEach(n => counters[n.p] = { inOctets: 1e12 * Math.random(), outOctets: 1e12 * Math.random(), inDiscards: 0, outDiscards: 0, inUcastPkts: 0, outUcastPkts: 0 });
+  const peers = {
+    '10.0.0.1': { asn: '65001', description: 'border-leaf-01', peerState: 'Established', prefixReceived: 128412, prefixAccepted: 128412, upDownTime: 0, msgSent: 4.1e6, msgReceived: 9.8e6 },
+    '10.0.0.3': { asn: '65001', description: 'border-leaf-02', peerState: 'Established', prefixReceived: 128397, prefixAccepted: 128397, upDownTime: 0, msgSent: 4.0e6, msgReceived: 9.7e6 },
+    '10.0.1.1': { asn: '65000', description: 'super-spine-01', peerState: 'Established', prefixReceived: 2410, prefixAccepted: 2410, upDownTime: 0, msgSent: 2.2e6, msgReceived: 2.1e6 },
+    '10.0.1.3': { asn: '65000', description: 'super-spine-02', peerState: 'Established', prefixReceived: 2410, prefixAccepted: 2410, upDownTime: 0, msgSent: 2.2e6, msgReceived: 2.1e6 },
+    '10.0.2.2': { asn: '65020', description: 'spine-02', peerState: 'Established', prefixReceived: 1880, prefixAccepted: 1880, upDownTime: 0, msgSent: 1.1e6, msgReceived: 1.1e6 },
+    '10.9.0.10': { asn: '65100', description: 'flow-collector-01', peerState: 'Established', prefixReceived: 0, prefixAccepted: 0, upDownTime: 0, msgSent: 3e5, msgReceived: 3e5 },
+  };
+  for (const p of Object.values(peers)) { p.upDownTime = Date.now() / 1000 - 86400 * (3 + Math.random() * 300); p.inMsgQueue = 0; p.outMsgQueue = 0; }
+  const logs = [];
+  const log = (sev, src, mn, msg) => { logs.push({ timestamp: new Date().toTimeString().slice(0, 8), host: 'spine-01', source: src, facility: src, severity: sev, mnemonic: mn, message: msg }); if (logs.length > 50) logs.shift(); };
+  log(6, 'Lldp', 'NEW_NEIGHBOR', 'LLDP neighbor with chassisId 001c.7300.0001 added on interface Ethernet49/1');
+  log(5, 'Bgp', 'ADJCHANGE', "peer 10.0.0.1 (VRF default AS 65001) old state OpenConfirm event Established new state Established");
+  log(6, 'ConfigAgent', 'EXIT', "netops exited configuration mode");
+  let down = null, bgpDown = null, tick = 0, temp = 0, lastDown = null, lastSnap = 0;
+  const t0 = Date.now() / 1000 - 86400 * 212.4;
+  function snapshot() {
+    tick++;
+    const now = Date.now() / 1000, snapDt = lastSnap ? now - lastSnap : 3; lastSnap = now;
+    // events: alternate a link loss (tick 8) and a BGP flap (tick 20) on a 30-tick cycle (~90 s)
+    const cyc = tick % 30;
+    if (cyc === 8 && !down) { down = nei.filter(n => role(n.dev) === 'leaf')[Math.floor(Math.random() * 12)]; log(3, 'Ebra', 'LINEPROTO-5-UPDOWN', `Line protocol on Interface ${down.p} (${down.ds}), changed state to down`); log(5, 'Lldp', 'NEIGHBOR_AGED', `LLDP neighbor with chassisId on interface ${down.p} aged out`); }
+    if (cyc === 16 && down) { log(5, 'Ebra', 'LINEPROTO-5-UPDOWN', `Line protocol on Interface ${down.p} (${down.ds}), changed state to up`); down = null; }
+    if (cyc === 20) { bgpDown = '10.0.0.3'; peers[bgpDown].peerState = 'Active'; peers[bgpDown].upDownTime = now; peers[bgpDown].prefixReceived = peers[bgpDown].prefixAccepted = 0; log(3, 'Bgp', 'ADJCHANGE', `peer ${bgpDown} (VRF default AS 65001) old state Established event Stop new state Idle`); }
+    if (cyc === 25 && bgpDown) { peers[bgpDown].peerState = 'Established'; peers[bgpDown].upDownTime = now; peers[bgpDown].prefixReceived = peers[bgpDown].prefixAccepted = 128397; log(5, 'Bgp', 'ADJCHANGE', `peer ${bgpDown} (VRF default AS 65001) old state OpenConfirm event Established new state Established`); bgpDown = null; }
+    for (const p of Object.values(peers)) if (p.peerState === 'Established') { const big = p.prefixReceived > 1e5; p.msgReceived += Math.round(Math.random() * (big ? 600 : 25)); p.msgSent += Math.round(Math.random() * (big ? 30 : 12)); }
+    if (tick % 7 === 0) log(6, 'Sflow', 'SAMPLE', 'sFlow datagram sent to collector 10.9.0.10');
+    temp = 41 + 4 * Math.sin(tick / 9);
+    // traffic: each link wanders around its own load, edges and spines heavier; a flap shifts load
+    for (const n of nei) {
+      const L = load[n.p], up = !(down && down.p === n.p);
+      let u = up ? Math.max(.01, L.u * (1 + .35 * Math.sin(tick / 4 + L.ph)) + (Math.random() - .5) * .04) : 0;
+      if (L.burst && tick % 9 < 2) u = .97;
+      if (bgpDown && n.dev.startsWith('border-leaf-01')) u *= 1.8;
+      if (bgpDown && n.dev.startsWith('border-leaf-02')) u *= .05;
+      const c = counters[n.p], bytes = u * n.sp / 8 * snapDt;
+      c.inOctets += bytes * (.9 + Math.random() * .1); c.outOctets += bytes * (.6 + Math.random() * .3);
+      u = Math.min(u, .99);
+      if (u > .8) c.outDiscards += Math.floor(200 + Math.random() * 900);
+    }
+    const statuses = {};
+    for (const n of nei) statuses[n.p] = { description: n.ds, linkStatus: down && down.p === n.p ? 'notconnect' : 'connected', lineProtocolStatus: down && down.p === n.p ? 'down' : 'up', bandwidth: n.sp, interfaceType: n.ty, duplex: 'duplexFull', vlanInformation: { interfaceMode: 'routed' } };
+    for (let i = 37; i <= 46; i++) statuses[`Ethernet${i}/1`] = { description: '', linkStatus: 'notconnect', bandwidth: 0, interfaceType: 'Not Present' };
+    statuses['Ethernet48/1'] = { description: 'reserved', linkStatus: 'disabled', bandwidth: 0, interfaceType: 'Not Present' };
+    const ospf = [];
+    if (Math.random() < .35) oc[[...ospfOn][Math.floor(Math.random() * ospfOn.size)]].rt += 1 + Math.floor(Math.random() * 4);
+    if (cyc === 8 && down && ospfOn.has(down.p)) oc[down.p].sc += 1;
+    if (cyc === 16 && ospfOn.has(nei.find(n => n.p === (lastDown || {}).p)?.p)) oc[lastDown.p].sc += 1;
+    if (down) lastDown = down;
+    for (const n of nei) if (ospfOn.has(n.p) && !(down && down.p === n.p)) ospf.push({ routerId: '10.255.0.' + (nei.indexOf(n) + 1), interfaceAddress: '10.0.0.' + (nei.indexOf(n) * 2 + 1), interfaceName: n.p, adjacencyState: 'full', priority: 1, drState: 'P2P', details: { areaId: oc[n.p].area, bfdState: role(n.dev) === 'leaf' ? 'adminDown' : 'up', retransmissionCount: oc[n.p].rt, numberOfStateChanges: oc[n.p].sc } });
+    return {
+      meta: { hostname: host, poll_count: tick, poll_time: 2.1 + Math.random(), error: null, timestamp: now },
+      version: { hostname: 'spine-01', modelName: 'DCS-7280CR3-32P4', version: '4.31.2F', serialNumber: 'JPE00000000', bootupTimestamp: t0, uptime: now - t0, memTotal: 32e6, memFree: 19e6 },
+      lldp: { lldpNeighbors: nei.filter(n => !(down && down.p === n.p)).map(n => ({ port: n.p, neighborDevice: n.dev, neighborPort: n.rp, ttl: 120 })) },
+      interfaces: { interfaceStatuses: statuses },
+      counters: { interfaces: JSON.parse(JSON.stringify(counters)) },
+      ospf: { vrfs: { default: { instList: { '1': { ospfNeighborEntries: ospf } } } } },
+      bgp: { vrfs: { default: { routerId: '10.255.0.5', asn: '65020', peers: JSON.parse(JSON.stringify(peers)) } } },
+      routes: { vrfs: { default: { totalRoutes: 133034, bgpCounts: { bgpExternal: 130822, bgpInternal: 1880 }, ospfCounts: { ospfIntraArea: 212, ospfInterArea: 18, ospfExternal2: 86 } } } },
+      proc: { cpuInfo: { '%Cpu(s)': { idle: 78 - 6 * Math.random(), user: 12, system: 6 } } },
+      environment: {
+        sensors: [['Cpu temp sensor', 62, 95], ['STAT0 remote sensor', 76 + 3 * Math.sin(tick / 6), 81], ['Fe0 remote sensor', 74, 81], ['Fe1 remote sensor', 72, 81], ['Front-panel temp', 27, 65], ['Rear temp', temp, 65], ['PSU1 hotspot', 38, 65], ['PSU2 hotspot', 39, 65]]
+          .map(([d, t, sp], i) => ({ id: i + 1, description: d, temp: t + Math.sin(tick / 5 + i) * 1.2, setpoint: sp, alert_limit: sp + 5, critical_limit: sp + 15, psu: /PSU(\d)/.test(d) ? +d.match(/PSU(\d)/)[1] : null })),
+        fans: [1, 2, 3, 4].map(i => ({ id: '' + i, status: 'Ok', config_speed: 42, actual_speed: 41 + Math.round(Math.random() * 2), stability: 'Stable' })),
+        power_supplies: [1, 2].map(i => ({ id: i, model: 'PWR-1511-AC-RED', capacity_w: 1500, input_amps: 2.1, output_amps: 31, output_watts: 360 + Math.random() * 20, status: 'Ok' })),
+        ambient_temp: 24, airflow: 'frontToBack', cooling_status: 'Ok', temp_status: 'Ok',
+      },
+      logging: logs.slice(),
+    };
+  }
+  ingest(snapshot());
+  setInterval(() => ingest(snapshot()), 3000);
+}
+
+/* =====================================================================================================
+   stations (DOM)
+   ===================================================================================================== */
+let condition = 'green';
+function renderAll() {
+  const d = D;
+  const ver = d.version || {}, meta = d.meta || {};
+  $('h-name').textContent = devName(d);
+  $('h-model').textContent = ver.modelName || '—';
+  $('h-ver').textContent = ver.version || '—';
+  const up = ver.uptime || (ver.bootupTimestamp ? Date.now() / 1000 - ver.bootupTimestamp : 0);
+  $('h-up').textContent = up ? fmtUp(up) : '—';
+  const idle = get(d, 'proc.cpuInfo.%Cpu(s).idle', null);
+  $('h-cpu').textContent = idle == null ? '—' : (100 - idle).toFixed(0) + '%';
+  $('h-poll').textContent = `#${meta.poll_count || 0} · ${(+meta.poll_time || 0).toFixed(1)}s${meta.stale ? ' · STALE' : ''}`;
+
+  // ---- shields: BGP
+  const peers = Object.entries(get(d, 'bgp.vrfs.default.peers', {})).map(([ip, p]) => ({ ip, ...p }));
+  const upN = peers.filter(p => p.peerState === 'Established').length;
+  $('sh-sum').textContent = `${upN}/${peers.length} ESTABLISHED`;
+  $('st-shields').innerHTML = shieldSvg(peers) + '<div class="peers">' + peers.map(p => {
+    const ok = p.peerState === 'Established';
+    return `<div class="row"><span class="${ok ? 'ok' : 'bad'}">${ok ? '◆' : '◇'} ${esc(p.description || p.ip)}</span><span class="mini">AS${esc(p.asn)}</span><span>${ok ? (p.prefixReceived || 0).toLocaleString() : `<span class="bad">${esc(p.peerState).toUpperCase()}</span>`}</span></div>`;
+  }).join('') + '</div>';
+
+  // ---- engineering
+  const env = d.environment || {};
+  const sensors = (env.sensors || []).slice().sort((a, b) => b.temp / b.setpoint - a.temp / a.setpoint);
+  const alertLim = s => s.alert_limit || s.setpoint + 5;
+  const hot = sensors.filter(s => s.temp >= alertLim(s));
+  $('en-sum').textContent = `AMBIENT ${env.ambient_temp ?? '--'}°C · TEMP ${env.temp_status || '—'}`;
+  let e = '';
+  for (const s of sensors.slice(0, 5)) {
+    const f = Math.min(1, s.temp / (s.critical_limit || s.setpoint * 1.3));
+    const c = s.temp >= alertLim(s) ? 'var(--bad)' : s.temp >= s.setpoint || f > .7 ? 'var(--warn)' : 'var(--pri)';
+    e += `<div class="row mini"><span>${esc(s.description)}</span><span style="color:${c}">${s.temp.toFixed(1)}°C</span></div><div class="bar"><i style="width:${f * 100}%;background:${c}"></i></div>`;
+  }
+  const fans = env.fans || [], psus = env.power_supplies || [];
+  e += `<div class="row mini" style="margin-top:4px"><span>FANS</span><span>${fans.map(f => `<span class="${/ok/i.test(f.status) ? 'ok' : 'bad'}">${f.actual_speed}%</span>`).join(' ')}</span></div>`;
+  e += `<div class="row mini"><span>PSU</span><span>${psus.map(p => `<span class="${/ok/i.test(p.status) ? 'ok' : 'bad'}">${Math.round(p.output_watts)}W</span>`).join(' / ')} of ${psus.reduce((a, p) => a + (p.capacity_w || 0), 0)}W</span></div>`;
+  $('st-eng').innerHTML = e;
+
+  // ---- drive: interfaces by load
+  const st = get(d, 'interfaces.interfaceStatuses', {});
+  const ifs = Object.entries(st).filter(([, v]) => v.linkStatus === 'connected').map(([n, v]) => ({ n, v, r: RATES[n] || { in: 0, out: 0, inDisc: 0, outDisc: 0 } }));
+  ifs.sort((a, b) => (b.r.in + b.r.out) / (b.v.bandwidth || 1) - (a.r.in + a.r.out) / (a.v.bandwidth || 1));
+  const totIn = ifs.reduce((a, x) => a + x.r.in, 0), totOut = ifs.reduce((a, x) => a + x.r.out, 0);
+  $('dr-sum').textContent = `${ifs.length} CONNECTED · ${fmtBps(totIn)} IN`;
+  $('st-drive').innerHTML = ifs.slice(0, 9).map(x => {
+    const bw = x.v.bandwidth || 1, ui = Math.min(1, x.r.in / bw), uo = Math.min(1, x.r.out / bw), disc = x.r.inDisc + x.r.outDisc;
+    return `<div class="row mini"><span>${shortPort(x.n)} <span style="color:var(--pri2)">${esc((x.v.description || '').slice(0, 18))}</span></span><span>${fmtSpeed(bw)}${disc > 0 ? ` <span class="warn">${disc.toFixed(0)} discards/s</span>` : ''}</span></div>` +
+      `<div class="bar dual"><i style="width:${ui * 100}%"></i><i class="o" style="width:${uo * 100}%"></i></div>`;
+  }).join('') + driveNote(d);
+
+  // ---- comms
+  const logs = (d.logging || []).slice(-14).reverse();
+  $('st-comms').innerHTML = logs.map(l => `<div class="s${l.severity}">${esc(shortTs(l.timestamp))} ${esc(l.source)} ${esc(l.mnemonic)}: ${esc(l.message)}</div>`).join('');
+
+  // ---- condition, by the box's own reporting:
+  //   'show system environment all' status lines (temperature / cooling), fan and PSU status, and per-sensor
+  //   limits: at the setpoint the fans ramp (normal), at the alert limit the box raises an alert, at the
+  //   critical limit it shuts down. Plus BGP sessions and LLDP neighbours lost since the page opened.
+  const red = [], yellow = [];
+  const notOk = v => v != null && v !== '' && !/^ok$/i.test(String(v).trim());
+  if (notOk(env.temp_status)) (/crit|shut|overheat/i.test(env.temp_status) ? red : yellow).push(`temperature ${env.temp_status}`);
+  if (notOk(env.cooling_status)) yellow.push(`cooling ${env.cooling_status}`);
+  const crit = sensors.filter(s => s.critical_limit && s.temp >= s.critical_limit);
+  if (crit.length) red.push(`${crit[0].description} at critical ${crit[0].critical_limit}°C`);
+  else if (hot.length) yellow.push(`${hot[0].description} ${hot[0].temp.toFixed(1)}°C over alert ${alertLim(hot[0])}°C`);
+  const badFan = fans.filter(f => notOk(f.status)), badPsu = psus.filter(p => notOk(p.status));
+  if (badFan.length) yellow.push(`fan ${badFan.map(f => f.id).join(', ')} ${badFan[0].status}`);
+  if (badPsu.length) (badPsu.length >= psus.length ? red : yellow).push(`PSU${badPsu.map(p => p.id).join(', ')} ${badPsu[0].status}`);
+  const bgpDown = peers.length && upN < peers.length;
+  if (bgpDown) red.push(`BGP ${peers.filter(p => p.peerState !== 'Established').map(p => p.description || p.ip).join(', ')} down`);
+  const ol = typeof Ospf !== 'undefined' ? Ospf.lost() : 0, onf = typeof Ospf !== 'undefined' ? Ospf.notFull() : 0;
+  if (ol) yellow.push(`${ol} OSPF adjacenc${ol > 1 ? 'ies' : 'y'} lost`);
+  if (onf) yellow.push(`${onf} OSPF adjacenc${onf > 1 ? 'ies' : 'y'} not FULL`);
+  const lost = Radar.lostCount();
+  if (lost) yellow.push(`${lost} LLDP neighbor${lost > 1 ? 's' : ''} lost`);
+  condition = red.length ? 'red' : yellow.length ? 'yellow' : 'green';
+  const s = $('h-status');
+  s.textContent = condition === 'red' ? 'CRITICAL' : condition === 'yellow' ? 'DEGRADED' : 'HEALTHY';
+  s.className = 'status ' + (condition === 'green' ? '' : condition); s.removeAttribute('style');
+  const why = [...red, ...yellow];
+  s.title = why.join('\n') || 'temperature, cooling, fans, PSUs, BGP and LLDP all normal';
+  $('h-why').textContent = why.length ? why[0] + (why.length > 1 ? ` (+${why.length - 1})` : '') : '';
+  document.body.classList.toggle('red', condition === 'red');
+  document.querySelector('[data-st=shields]').classList.toggle('hot', !!bgpDown);
+  document.querySelector('[data-st=eng]').classList.toggle('hot', hot.length > 0 || crit.length > 0 || badFan.length > 0 || badPsu.length > 0 || notOk(env.temp_status));
+
+  Radar.update(d);
+  Util.update(d);
+  Therm.update(d);
+  Bgp.update(d);
+  Ospf.update(d);
+  if (view === 'util') $('se-sum').textContent = Util.summary();
+  if (view === 'therm') $('se-sum').textContent = Therm.summary();
+  if (detailOn) renderDetail(d);
+  if (view === 'bgp') $('se-sum').textContent = Bgp.summary();
+  if (view === 'ospf') $('se-sum').textContent = Ospf.summary();
+  if (expanded) openStation(expanded);
+}
+
+function driveNote(d) {
+  const c = d.counters;
+  if (c == null) return '<div class="mini warn">no counters in the feed</div>';
+  if (c._error) return `<div class="mini warn">counters: ${esc(c._error)}${c._raw ? ' — ' + esc(String(c._raw).slice(0, 160)) : ''}</div>`;
+  if (!c.interfaces) return `<div class="mini warn">counters has no "interfaces" key; keys: ${esc(Object.keys(c).slice(0, 8).join(', '))}</div>`;
+  if (!Object.keys(RATES).length) {
+    const [p, v] = Object.entries(c.interfaces)[0] || [];
+    return `<div class="mini">waiting for a second poll to derive rates…</div>` + (v && v.inOctets == null ? `<div class="mini warn">no inOctets on ${esc(p)}; fields: ${esc(Object.keys(v).slice(0, 10).join(', '))}</div>` : '');
+  }
+  return '';
+}
+
+function shieldSvg(peers) {
+  const n = Math.max(peers.length, 1), R = 46, C = 60, gap = .06;
+  let s = `<svg class="shield" width="120" height="120" viewBox="0 0 120 120"><circle cx="${C}" cy="${C}" r="16" fill="none" stroke="#1d4a5a"/><text x="${C}" y="${C + 4}" fill="#9ff0ff" font-size="10" text-anchor="middle" font-family="Share Tech Mono">${peers.filter(p => p.peerState === 'Established').length}/${peers.length}</text>`;
+  const maxP = Math.max(1, ...peers.map(p => Math.log10((p.prefixReceived || 0) + 10)));
+  peers.forEach((p, i) => {
+    const a0 = i / n * Math.PI * 2 - Math.PI / 2 + gap, a1 = (i + 1) / n * Math.PI * 2 - Math.PI / 2 - gap;
+    const ok = p.peerState === 'Established', w = ok ? 4 + 8 * Math.log10((p.prefixReceived || 0) + 10) / maxP : 2;
+    const x0 = C + R * Math.cos(a0), y0 = C + R * Math.sin(a0), x1 = C + R * Math.cos(a1), y1 = C + R * Math.sin(a1);
+    s += `<path d="M${x0} ${y0} A${R} ${R} 0 0 1 ${x1} ${y1}" fill="none" stroke="${ok ? '#56e0ff' : '#ff4b4b'}" stroke-width="${w}" stroke-opacity="${ok ? .85 : .9}" ${ok ? '' : 'stroke-dasharray="3 3"'}><title>${esc(p.description || p.ip)}</title></path>`;
+  });
+  return s + '</svg>';
+}
+
+/* ---------- expand a station onto a larger pane ---------- */
+let expanded = null;
+function openStation(id) {
+  expanded = id;
+  const src = { shields: 'st-shields', eng: 'st-eng', drive: 'st-drive', comms: 'st-comms' }[id];
+  $('ex-ttl').innerHTML = document.querySelector(`[data-st=${id}] .ttl`).innerHTML;
+  let html = $(src).innerHTML;
+  if (id === 'drive' && D) {   // full table when expanded
+    const st = get(D, 'interfaces.interfaceStatuses', {});
+    html = Object.keys(st).sort(natural).map(n => { const v = st[n], r = RATES[n] || { in: 0, out: 0 }; const c = v.linkStatus === 'connected' ? 'ok' : v.linkStatus === 'disabled' ? 'mini' : 'warn';
+      return `<div class="row"><span class="${c}">${shortPort(n)}</span><span style="flex:1;margin-left:12px">${esc(v.description)}</span><span class="mini">${esc(v.interfaceType)}</span><span style="width:90px;text-align:right">${fmtBps(r.in)}</span><span style="width:90px;text-align:right;color:var(--other)">${fmtBps(r.out)}</span></div>`; }).join('');
+  }
+  if (id === 'comms' && D) html = (D.logging || []).slice().reverse().map(l => `<div class="s${l.severity}" style="white-space:normal">${esc(l.timestamp)} ${esc(l.source)} ${esc(l.mnemonic)}: ${esc(l.message)}</div>`).join('');
+  $('ex-body').innerHTML = html; $('ex-body').className = 'body' + (id === 'comms' ? ' log' : '');
+  $('expand').classList.add('on');
+}
+document.querySelectorAll('.side .frame').forEach(f => f.onclick = () => f.dataset.st === 'drive' ? setView('util') : f.dataset.st === 'eng' ? setView('therm') : f.dataset.st === 'shields' ? setView('bgp') : openStation(f.dataset.st));
+$('closex').onclick = () => { expanded = null; $('expand').classList.remove('on'); };
+
+/* =====================================================================================================
+   SENSORS: the 3D radar
+   ===================================================================================================== */
+const Radar = (() => {
+  const host = $('main');
+  const R = new THREE.WebGLRenderer({ antialias: true });
+  R.setPixelRatio(Math.min(devicePixelRatio, 2));
+  R.setClearColor(0x02070b);
+  host.prepend(R.domElement);
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x02070b, 0.0085);
+  const cam = new THREE.PerspectiveCamera(48, 1, .1, 500);
+  cam.position.set(0, 58, 74);
+  const ctl = new THREE.OrbitControls(cam, R.domElement);
+  ctl.enableDamping = true; ctl.dampingFactor = .08; ctl.minDistance = 25; ctl.maxDistance = 140; ctl.enablePan = false;
+  ctl.autoRotate = true; ctl.autoRotateSpeed = .35; ctl.target.set(0, 0, 0);
+  ctl.addEventListener('start', () => ctl.autoRotate = false);
+  const add = o => (scene.add(o), o);
+  const lineMat = (c, o) => new THREE.LineBasicMaterial({ color: c, transparent: true, opacity: o, depthWrite: false });
+
+  // ---- the plotting volume: polar rings, spokes, range labels, a faint holo cylinder
+  const RING = [12, 22, 32, 42];
+  for (const r of RING) {
+    const g = new THREE.BufferGeometry().setFromPoints(Array.from({ length: 129 }, (_, i) => new THREE.Vector3(r * Math.cos(i / 128 * Math.PI * 2), 0, r * Math.sin(i / 128 * Math.PI * 2))));
+    add(new THREE.Line(g, lineMat(0x2f7d93, r === 42 ? .55 : .28)));
+  }
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * Math.PI * 2;
+    add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(4 * Math.cos(a), 0, 4 * Math.sin(a)), new THREE.Vector3(44 * Math.cos(a), 0, 44 * Math.sin(a))]), lineMat(0x2f7d93, .14)));
+  }
+  for (let i = 0; i < 72; i++) {   // bearing ticks
+    const a = i / 72 * Math.PI * 2, l = i % 6 ? 42.8 : 44;
+    add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(42 * Math.cos(a), 0, 42 * Math.sin(a)), new THREE.Vector3(l * Math.cos(a), 0, l * Math.sin(a))]), lineMat(0x56e0ff, .45)));
+  }
+  for (const y of [-16, 16]) {
+    const g = new THREE.BufferGeometry().setFromPoints(Array.from({ length: 97 }, (_, i) => new THREE.Vector3(42 * Math.cos(i / 96 * Math.PI * 2), y, 42 * Math.sin(i / 96 * Math.PI * 2))));
+    add(new THREE.Line(g, lineMat(0x2f7d93, .1)));
+  }
+  // plane glow
+  const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d'); const g = x.createRadialGradient(128, 128, 0, 128, 128, 128); g.addColorStop(0, 'rgba(86,224,255,.16)'); g.addColorStop(.7, 'rgba(86,224,255,.04)'); g.addColorStop(1, 'rgba(86,224,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 256, 256); return new THREE.CanvasTexture(c); })();
+  const plane = add(new THREE.Mesh(new THREE.CircleGeometry(44, 96), new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })));
+  plane.rotation.x = -Math.PI / 2;
+  // sweep: a sector with a trailing gradient
+  const sweepTex = (() => { const c = document.createElement('canvas'); c.width = 256; c.height = 4; const x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, 256, 0); g.addColorStop(0, 'rgba(86,224,255,0)'); g.addColorStop(1, 'rgba(86,224,255,.55)'); x.fillStyle = g; x.fillRect(0, 0, 256, 4); return new THREE.CanvasTexture(c); })();
+  const SW = .9;
+  const sg = new THREE.CircleGeometry(42, 48, 0, SW);
+  { const uv = sg.attributes.uv, pos = sg.attributes.position; for (let i = 0; i < uv.count; i++) { const a = Math.atan2(pos.getY(i), pos.getX(i)); uv.setXY(i, i === 0 ? 1 : Math.max(0, Math.min(1, a / SW)), .5); } }
+  const sweep = add(new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ map: sweepTex, transparent: true, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })));
+  sweep.rotation.x = -Math.PI / 2;
+  const sweepEdge = add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(42, 0, 0)]), lineMat(0x9ff0ff, .9)));
+
+  // ---- own ship: the chassis, with a port strip that lights per connected port
+  const own = add(new THREE.Group());
+  const chassis = new THREE.Mesh(new THREE.BoxGeometry(9, 1.6, 4.2), new THREE.MeshBasicMaterial({ color: 0x07161d, transparent: true, opacity: .9 }));
+  own.add(chassis);
+  own.add(new THREE.LineSegments(new THREE.EdgesGeometry(chassis.geometry), lineMat(0x56e0ff, .95)));
+  const portDots = new THREE.Group(); own.add(portDots);
+  const ownLabel = makeLabel('—', '#9ff0ff', 26); ownLabel.position.set(0, 3.2, 0); own.add(ownLabel);
+
+  // ---- contacts
+  const contacts = new Map();   // device -> contact
+  const linkPorts = new Map();  // local port -> device
+  const raycast = new THREE.Raycaster(), mouse = new THREE.Vector2();
+  let hovered = null, pinned = null, lastPing = {};
+
+  function makeLabel(text, color, px = 22, sub) {
+    const c = document.createElement('canvas'), x = c.getContext('2d');
+    x.font = `600 ${px}px "Chakra Petch", sans-serif`;
+    const w1 = x.measureText(text).width; let w2 = 0;
+    if (sub) { x.font = `${px * .72}px "Share Tech Mono", monospace`; w2 = x.measureText(sub).width; }
+    c.width = Math.ceil(Math.max(w1, w2) + 16); c.height = Math.ceil(px * (sub ? 2.1 : 1.35));
+    x.font = `600 ${px}px "Chakra Petch", sans-serif`; x.fillStyle = color; x.textBaseline = 'top'; x.shadowColor = color; x.shadowBlur = 6;
+    x.fillText(text, 8, 2);
+    if (sub) { x.font = `${px * .72}px "Share Tech Mono", monospace`; x.fillStyle = '#7fb3c2'; x.shadowBlur = 0; x.fillText(sub, 8, px * 1.22); }
+    const t = new THREE.CanvasTexture(c); t.minFilter = THREE.LinearFilter;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, depthTest: false }));
+    const k = .045; s.scale.set(c.width * k, c.height * k, 1); s.center.set(.5, 0); s.renderOrder = 5;
+    return s;
+  }
+
+  function makeContact(dev) {
+    const r = role(dev), col = ROLE_COL[r];
+    const g = new THREE.Group(); scene.add(g);
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(.85), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: .85 }));
+    const shell = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.OctahedronGeometry(1.5)), lineMat(col, .9));
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: col, transparent: true, opacity: .0, depthWrite: false, blending: THREE.AdditiveBlending }));
+    halo.scale.set(9, 9, 1);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(2.4, .07, 6, 48), new THREE.MeshBasicMaterial({ color: 0x3dffa0, transparent: true, opacity: .9 }));
+    ring.rotation.x = Math.PI / 2; ring.visible = false;
+    g.add(core, shell, halo, ring);
+    const drop = add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), lineMat(col, .35)));
+    const foot = add(new THREE.Mesh(new THREE.RingGeometry(.6, .8, 24), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: .5, side: THREE.DoubleSide, depthWrite: false })));
+    foot.rotation.x = -Math.PI / 2;
+    const label = makeLabel(shortName(dev), '#' + col.toString(16).padStart(6, '0'), 22); g.add(label); label.position.y = 2.2;
+    const beam = add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), lineMat(col, .22)));
+    // traffic: two particle streams along the beam (in toward us, out toward them)
+    const N = 48;
+    const mkStream = c => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3)); return add(new THREE.Points(geo, new THREE.PointsMaterial({ color: c, size: .55, transparent: true, opacity: .95, depthWrite: false, blending: THREE.AdditiveBlending }))); };
+    const sIn = mkStream(0x9ff0ff), sOut = mkStream(0xc49bff);
+    const phase = Float32Array.from({ length: N }, () => Math.random());
+    const ripple = add(new THREE.Mesh(new THREE.RingGeometry(.9, 1.1, 40), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })));
+    ripple.rotation.x = -Math.PI / 2;
+    core.userData.dev = shell.userData.dev = dev;
+    return { dev, role: r, col, g, core, shell, halo, ring, drop, foot, label, beam, sIn, sOut, phase, ripple, rippleT: 0,
+             pos: new THREE.Vector3(), target: new THREE.Vector3(), links: [], lost: 0, born: performance.now(), util: 0, rateIn: 0, rateOut: 0, ospf: null, bearing: 0 };
+  }
+
+  function dispose(c) {
+    for (const o of [c.g, c.drop, c.foot, c.beam, c.sIn, c.sOut, c.ripple]) { scene.remove(o); o.traverse && o.traverse(m => { m.geometry && m.geometry.dispose(); m.material && m.material.dispose && m.material.dispose(); }); }
+  }
+
+  function update(d) {
+    const nei = get(d, 'lldp.lldpNeighbors', []);
+    const st = get(d, 'interfaces.interfaceStatuses', {});
+    const ospf = []; for (const inst of Object.values(get(d, 'ospf.vrfs.default.instList', {}))) ospf.push(...(inst.ospfNeighborEntries || []));
+    const ospfBy = Object.fromEntries(ospf.map(o => [o.interfaceName, o]));
+    const ownText = devName(d) + '|' + get(d, 'version.modelName', '');
+    if (ownText !== ownLabelText) {
+      own.remove(ownLabelRef); ownLabelRef.material.map.dispose(); ownLabelRef.material.dispose();
+      const [a, b] = ownText.split('|'); ownLabelRef = makeLabel(a, '#9ff0ff', 26, b); ownLabelRef.position.set(0, 1.4, 0); own.add(ownLabelRef); ownLabelText = ownText;
+    }
+
+    // bearing from the local port's place among all front-panel ports (ports wrap the chassis in order)
+    const allPorts = Object.keys(st).filter(p => /^Ethernet/.test(p)).sort(natural);
+    const nPorts = [...new Set(nei.map(n => n.port))].sort(natural);   // ports with a neighbour, in port order, spread round the circle
+    const bearingOf = p => Math.max(0, nPorts.indexOf(p)) / Math.max(nPorts.length, 1) * Math.PI * 2 - Math.PI / 2;
+
+    // port strip on the chassis
+    while (portDots.children.length) { const m = portDots.children.pop(); m.geometry.dispose(); m.material.dispose(); }
+    const cols = Math.ceil(allPorts.length / 2);
+    allPorts.forEach((p, i) => {
+      const s = st[p].linkStatus, c = s === 'connected' ? 0x3dffa0 : s === 'disabled' ? 0x22343b : 0xffb340;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(.18, .18), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: s === 'notconnect' ? .35 : .95 }));
+      m.position.set(-4.2 + (i % cols) / Math.max(cols - 1, 1) * 8.4, .82, -1 + Math.floor(i / cols) * .5); m.rotation.x = -Math.PI / 2; portDots.add(m);
+    });
+
+    // group links by neighbour device
+    const by = new Map();
+    for (const n of nei) { if (!by.has(n.neighborDevice)) by.set(n.neighborDevice, []); by.get(n.neighborDevice).push(n); }
+    for (const [dev, links] of by) {
+      let c = contacts.get(dev);
+      if (!c) { c = makeContact(dev); contacts.set(dev, c); c.rippleT = 1; toast(`LLDP NEIGHBOR ADDED · ${shortName(dev).toUpperCase()}`); }
+      if (c.lost) { c.lost = 0; setTint(c, c.col); toast(`LLDP NEIGHBOR RESTORED · ${shortName(dev).toUpperCase()}`); c.rippleT = 1; }
+      c.links = links;
+      // circular mean of the link bearings
+      // leaves and others: bearing by port order round the full circle; edge and core: spread evenly round their own
+      // ring (their uplinks sit on adjacent ports and would stack), still in port order, offset so tiers interleave
+      if (c.role === 'edge' || c.role === 'core') {
+        const tier = [...by.keys()].filter(k => role(k) === c.role).sort((x, y) => natural(by.get(x)[0].port, by.get(y)[0].port));
+        c.bearing = tier.indexOf(dev) / tier.length * Math.PI * 2 - Math.PI / 4 + (c.role === 'core' ? Math.PI / tier.length : 0);
+      } else {
+        let sx = 0, sz = 0; for (const l of links) { const a = bearingOf(l.port); sx += Math.cos(a); sz += Math.sin(a); }
+        c.bearing = Math.atan2(sz, sx);
+      }
+      const speed = Math.max(...links.map(l => get(st, l.port, {}).bandwidth || 0));
+      // range by tier (edge innermost); slower links sit a little further out; leaves alternate in and out so labels clear
+      const base = { edge: 15, core: 21, leaf: 30, other: 37 }[c.role];
+      const slow = speed >= 100e9 ? 0 : speed >= 40e9 ? 1.5 : speed >= 10e9 ? 3 : 5;
+      const stagger = c.role === 'leaf' ? (nPorts.indexOf(links[0].port) % 2 ? 3.5 : -1.5) : 0;
+      const range = base + slow + stagger;
+      const elev = c.role === 'edge' ? 11 : c.role === 'core' ? 6.5 : c.role === 'leaf' ? -6.5 : 0;
+      c.target.set(range * Math.cos(c.bearing), elev, range * Math.sin(c.bearing));
+      if (c.pos.lengthSq() === 0) c.pos.copy(c.target).multiplyScalar(1.6);
+      // traffic and utilisation over all its links
+      let ri = 0, ro = 0, bw = 0; for (const l of links) { const r = RATES[l.port]; if (r) { ri += r.in; ro += r.out; } bw += get(st, l.port, {}).bandwidth || 0; }
+      c.rateIn = ri; c.rateOut = ro; c.util = bw ? Math.min(1, Math.max(ri, ro) / bw) : 0; c.bw = bw;
+      const o = links.map(l => ospfBy[l.port]).find(Boolean);
+      c.ospf = o || null; c.ring.visible = !!o;
+      if (o) c.ring.material.color.setHex(o.adjacencyState === 'full' ? 0x3dffa0 : 0xffb340);
+    }
+    // contacts no longer heard: ghost them, then drop after a minute
+    for (const [dev, c] of contacts) if (!by.has(dev) && !c.lost) { c.lost = performance.now(); setTint(c, 0xff4b4b); toast(`LLDP NEIGHBOR LOST · ${shortName(dev).toUpperCase()}`, true); }
+    const live = [...contacts.values()].filter(c => !c.lost);
+    $('se-sum').textContent = `${live.length} NEIGHBORS · ${ospf.filter(o => o.adjacencyState === 'full').length} OSPF FULL`;
+    if (pinned) showScan(pinned);
+  }
+  let ownLabelRef = ownLabel, ownLabelText = '';
+
+  function setTint(c, col) {
+    for (const m of [c.core.material, c.shell.material, c.drop.material, c.foot.material, c.beam.material, c.halo.material]) m.color.setHex(col);
+  }
+
+  let toastT = 0;
+  function toast(t, bad) { const e = $('toast'); e.textContent = t; e.style.color = bad ? 'var(--bad)' : 'var(--warn)'; e.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => e.classList.remove('on'), 3200); }
+
+  // ---- scan readout
+  function showScan(dev) {
+    const c = contacts.get(dev); const el = $('scan');
+    if (!c) { el.style.display = 'none'; return; }
+    const st = get(D, 'interfaces.interfaceStatuses', {});
+    const rows = [['TIER', c.role.toUpperCase()], ['LINKS', c.links.length], ...c.links.map(l => [shortPort(l.port), `⇄ ${esc(l.neighborPort)} · ${fmtSpeed(get(st, l.port, {}).bandwidth)} ${esc(get(st, l.port, {}).interfaceType || '')}`]),
+                  ['IN', fmtBps(c.rateIn)], ['OUT', fmtBps(c.rateOut)], ['UTILIZATION', (c.util * 100).toFixed(1) + '%'],
+                  ['OSPF', c.ospf ? `${c.ospf.adjacencyState.toUpperCase()} · ${c.ospf.routerId}` : '—']];
+    el.innerHTML = `<h3>${esc(shortName(dev).toUpperCase())}${c.lost ? ' <span class="bad">· LLDP AGED OUT</span>' : ''}</h3><div class="mini" style="margin-bottom:6px">${esc(dev)}</div>` + rows.map(([k, v]) => `<div class="row"><span>${k}</span><span>${v}</span></div>`).join('');
+    el.style.display = 'block';
+  }
+  function pick(ev) {
+    const r = R.domElement.getBoundingClientRect();
+    mouse.set((ev.clientX - r.left) / r.width * 2 - 1, -(ev.clientY - r.top) / r.height * 2 + 1);
+    raycast.setFromCamera(mouse, cam);
+    const hits = raycast.intersectObjects([...contacts.values()].map(c => c.core), false);
+    return hits.length ? hits[0].object.userData.dev : null;
+  }
+  R.domElement.addEventListener('pointermove', ev => { if (ev.pointerType !== 'mouse') return; hovered = pick(ev); if (!pinned) showScan(hovered); R.domElement.style.cursor = hovered ? 'pointer' : ''; });
+  let downAt = null;
+  R.domElement.addEventListener('pointerdown', ev => downAt = [ev.clientX, ev.clientY]);
+  R.domElement.addEventListener('pointerup', ev => { if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 6) return; const d = pick(ev); pinned = d; showScan(d); });
+
+  // ---- animation
+  const clock = new THREE.Clock(); let sweepA = 0;
+  function frame() {
+    const dt = Math.min(clock.getDelta(), .1), t = clock.elapsedTime, now = performance.now();
+    if (R.domElement.style.display === 'none') { requestAnimationFrame(frame); return; }
+    sweepA = (sweepA + dt * .9) % (Math.PI * 2);
+    sweep.rotation.z = sweepA - SW;                     // the sector trails behind its leading edge
+    sweepEdge.rotation.y = -sweepA;
+    own.rotation.y = Math.sin(t * .2) * .05;
+    for (const [dev, c] of contacts) {
+      c.pos.lerp(c.target, 1 - Math.exp(-dt * 2.5));
+      c.g.position.copy(c.pos).add(new THREE.Vector3(0, Math.sin(t * 1.3 + c.bearing * 3) * .25, 0));
+      c.shell.rotation.y += dt * (.4 + c.util * 3); c.core.rotation.y -= dt * .8;
+      c.ring.rotation.z += dt * 1.2;
+      // sweep ping: brighten as the beam passes the contact's bearing
+      const b = (c.bearing % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+      let diff = sweepA - b; if (diff < 0) diff += Math.PI * 2;
+      const ping = Math.max(0, 1 - diff / 1.6);
+      c.halo.material.opacity = c.lost ? .25 + .2 * Math.sin(t * 6) : .12 + ping * .55 + (dev === hovered || dev === pinned ? .35 : 0);
+      c.label.material.opacity = c.lost ? .55 : .55 + ping * .45;
+      const gp = c.g.position;
+      c.drop.geometry.setFromPoints([new THREE.Vector3(gp.x, gp.y, gp.z), new THREE.Vector3(gp.x, 0, gp.z)]);
+      c.foot.position.set(gp.x, .02, gp.z);
+      c.beam.geometry.setFromPoints([new THREE.Vector3(0, .9, 0), gp.clone()]);
+      c.beam.material.opacity = c.lost ? .15 : .15 + c.util * .6;
+      // traffic particles: count by load, speed by load
+      const n = c.lost ? 0 : Math.round(4 + c.util * 44), sp = .12 + c.util * .9;
+      for (const [s, dir, off] of [[c.sIn, -1, 0], [c.sOut, 1, .37]]) {
+        const a = s.geometry.attributes.position; s.geometry.setDrawRange(0, n);
+        for (let i = 0; i < n; i++) {
+          let f = (c.phase[i] + off + t * sp * (dir > 0 ? 1 : 1)) % 1; if (dir < 0) f = 1 - f;
+          const side = dir > 0 ? .25 : -.25;
+          a.setXYZ(i, gp.x * f + side * Math.sin(c.bearing), .9 + (gp.y - .9) * f, gp.z * f - side * Math.cos(c.bearing));
+        }
+        a.needsUpdate = true;
+      }
+      // ripple on new contact or reacquire
+      if (c.rippleT > 0) { c.rippleT = Math.max(0, c.rippleT - dt * .6); const k = 1 + (1 - c.rippleT) * 9; c.ripple.scale.set(k, k, 1); c.ripple.position.set(gp.x, .05, gp.z); c.ripple.material.opacity = c.rippleT * .9; }
+      // lost: fade out over 60 s, then forget
+      if (c.lost) {
+        const k = 1 - (now - c.lost) / 60000;
+        for (const m of [c.core.material, c.shell.material, c.drop.material, c.foot.material]) m.opacity = Math.max(0, k) * (.5 + .4 * Math.sin(t * 6));
+        if (k <= 0) { dispose(c); contacts.delete(dev); if (pinned === dev) { pinned = null; showScan(null); } }
+      }
+    }
+    ctl.update();
+    R.render(scene, cam);
+    requestAnimationFrame(frame);
+  }
+  function resize() { const r = host.getBoundingClientRect(); R.setSize(r.width, r.height, false); cam.aspect = r.width / Math.max(r.height, 1); cam.updateProjectionMatrix();
+    const want = 94 * Math.max(1, 1.25 / cam.aspect) ** .4;   // narrow screens: stand further back so the full ring fits
+    cam.position.setLength(want); }
+  new ResizeObserver(resize).observe(host); resize();
+  requestAnimationFrame(frame);
+  window.__bridge = { contacts, cam, ctl };
+  return { update, lostCount: () => [...contacts.values()].filter(c => c.lost).length, canvas: R.domElement, ctl, clearScan: () => { pinned = hovered = null; } };
+})();
+/* =====================================================================================================
+   INTERFACE UTILIZATION: a 3D skyline of the front panel. One pair of columns per port (in left, out right),
+   height = utilization on a square-root scale (labelled on the back wall), colour heats from the stream's own
+   hue through amber (>50%) to red (>80%). The last HLEN polls recede behind the front row, darkening with
+   age; each new poll slides in from the front. Discards throw red sparks off the column.
+   ===================================================================================================== */
+const Util = (() => {
+  const host = $('main');
+  const R = new THREE.WebGLRenderer({ antialias: true });
+  R.setPixelRatio(Math.min(devicePixelRatio, 2)); R.setClearColor(0x02070b);
+  R.domElement.style.display = 'none';
+  host.prepend(R.domElement);
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x02070b, 50, 120);
+  const cam = new THREE.PerspectiveCamera(42, 1, .1, 400);
+  const ctl = new THREE.OrbitControls(cam, R.domElement);
+  ctl.enableDamping = true; ctl.dampingFactor = .08; ctl.enablePan = false; ctl.minDistance = 12; ctl.maxDistance = 140;
+  ctl.maxPolarAngle = Math.PI * .48;
+  scene.add(new THREE.HemisphereLight(0x9fdcff, 0x0a1420, .75));
+  const key = new THREE.DirectionalLight(0xffffff, .9); key.position.set(-20, 40, 30); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x56e0ff, .35); rim.position.set(30, 10, -40); scene.add(rim);
+
+  const MAXH = 13, DX = 1.35, DZ = 1.05, W = .5;
+  const hgt = u => Math.sqrt(Math.max(0, Math.min(1, u))) * MAXH;   // √ scale: 1% is still visible, 100% is full height
+  const C_IN = new THREE.Color(0x56e0ff), C_OUT = new THREE.Color(0xc49bff), C_AMB = new THREE.Color(0xffb340), C_RED = new THREE.Color(0xff4b4b);
+  const tmp = new THREE.Color();
+  function heat(base, u, age) {
+    if (u < .5) tmp.copy(base); else if (u < .8) tmp.copy(base).lerp(C_AMB, (u - .5) / .3); else tmp.copy(C_AMB).lerp(C_RED, Math.min(1, (u - .8) / .15));
+    const fade = age === 0 ? 1.25 : .12 + .7 * Math.pow(1 - age / HLEN, 1.6);
+    return tmp.multiplyScalar(fade);
+  }
+
+  let ports = [], key0 = '', inst = null, deck = null, statics = new THREE.Group(), labels = new THREE.Group(), glows = [];
+  scene.add(statics, labels);
+  const dummy = new THREE.Object3D();
+  const xOf = i => (i - (ports.length - 1) / 2) * DX;
+  const backZ = () => -(HLEN - 1) * DZ - 1.6;
+
+  function vlabel(text, color, px = 20) {   // vertical port label, read bottom to top like a front panel
+    const c = document.createElement('canvas'), x = c.getContext('2d');
+    x.font = `600 ${px}px "Share Tech Mono", monospace`; const w = Math.ceil(x.measureText(text).width) + 8;
+    c.width = px + 8; c.height = w;
+    x.translate(c.width / 2, c.height / 2); x.rotate(-Math.PI / 2);
+    x.font = `600 ${px}px "Share Tech Mono", monospace`; x.fillStyle = color; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(text, 0, 0);
+    const t = new THREE.CanvasTexture(c); t.minFilter = THREE.LinearFilter;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(c.width * .028, c.height * .028), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2;
+    return m;
+  }
+  function hlabel(text, color, px = 22) {
+    const c = document.createElement('canvas'), x = c.getContext('2d');
+    x.font = `600 ${px}px "Share Tech Mono", monospace`; c.width = Math.ceil(x.measureText(text).width) + 8; c.height = px + 8;
+    x.font = `600 ${px}px "Share Tech Mono", monospace`; x.fillStyle = color; x.textBaseline = 'middle'; x.fillText(text, 4, c.height / 2);
+    const t = new THREE.CanvasTexture(c); t.minFilter = THREE.LinearFilter;
+    return new THREE.Mesh(new THREE.PlaneGeometry(c.width * .03, c.height * .03), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+  }
+  const clear = g => { while (g.children.length) { const m = g.children.pop(); m.traverse(o => { o.geometry && o.geometry.dispose(); if (o.material) { o.material.map && o.material.map.dispose(); o.material.dispose(); } }); } };
+
+  // the chassis deck, port sockets with link LEDs, scale wall, labels: rebuilt when the port list changes
+  function layout(st) {
+    clear(statics); clear(labels);
+    if (inst) { scene.remove(inst); inst.geometry.dispose(); inst.material.dispose(); }
+    for (const g of glows) { scene.remove(g); g.material.dispose(); } glows = [];
+    const n = ports.length, half = (n - 1) / 2 * DX + 1.4, bz = backZ();
+    // deck
+    const deckM = new THREE.Mesh(new THREE.BoxGeometry(half * 2, .5, 2.2), new THREE.MeshStandardMaterial({ color: 0x0b1a22, metalness: .6, roughness: .45 }));
+    deckM.position.set(0, -.3, 1.4); statics.add(deckM);
+    const deckE = new THREE.LineSegments(new THREE.EdgesGeometry(deckM.geometry), new THREE.LineBasicMaterial({ color: 0x2f7d93 })); deckE.position.copy(deckM.position); statics.add(deckE);
+    deck = [];
+    ports.forEach((p, i) => {
+      const s = st[p] || {}, c = s.linkStatus === 'connected' ? 0x3dffa0 : s.linkStatus === 'disabled' ? 0x1a2a30 : 0xffb340;
+      const led = new THREE.Mesh(new THREE.PlaneGeometry(.55, .4), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: s.linkStatus === 'connected' ? .95 : .35 }));
+      led.rotation.x = -Math.PI / 2; led.position.set(xOf(i), -.04, 1.05); statics.add(led); deck.push(led);
+      const lb = vlabel(shortPort(p), s.linkStatus === 'connected' ? '#9ff0ff' : '#3c5a64'); lb.position.set(xOf(i), -.04, 2.05 + lb.geometry.parameters.height / 2 - .2); labels.add(lb);
+    });
+    // floor grid along each port lane, and the back wall with the scale
+    const lines = [];
+    for (let i = 0; i <= n; i++) { const x = xOf(i) - DX / 2; lines.push(x, 0, .6, x, 0, bz); }
+    for (const u of [.01, .1, .25, .5, .8, 1]) { const y = hgt(u); lines.push(-half, y, bz, half, y, bz); }
+    lines.push(-half, 0, bz, -half, MAXH, bz, half, 0, bz, half, MAXH, bz);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+    statics.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x2f7d93, transparent: true, opacity: .25 })));
+    for (const u of [.01, .1, .25, .5, .8, 1]) { const l = hlabel((u * 100) + '%', u >= .8 ? '#ff7a6a' : u >= .5 ? '#ffb340' : '#7fb3c2'); l.position.set(-half - 2.2, hgt(u), bz); statics.add(l); const r = l.clone(); r.position.x = half + 2.2; statics.add(r); }
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(half * 2, MAXH), new THREE.MeshBasicMaterial({ color: 0x56e0ff, transparent: true, opacity: .025, depthWrite: false }));
+    wall.position.set(0, MAXH / 2, bz - .01); statics.add(wall);
+    // columns: one instance per port, stream, poll
+    const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, .5, 0);
+    inst = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ metalness: .35, roughness: .4 }), n * 2 * HLEN);
+    inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    inst.setColorAt(0, new THREE.Color()); scene.add(inst);
+    // glow caps for the front row
+    for (let i = 0; i < n * 2; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })); scene.add(sp); glows.push(sp); }
+    frameCamera();
+  }
+  const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); const g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(.3, 'rgba(255,255,255,.25)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+
+  // sparks for discards
+  const SP = 400, spPos = new Float32Array(SP * 3), spVel = new Float32Array(SP * 3), spLife = new Float32Array(SP);
+  const spGeo = new THREE.BufferGeometry(); spGeo.setAttribute('position', new THREE.BufferAttribute(spPos, 3));
+  const sparks = new THREE.Points(spGeo, new THREE.PointsMaterial({ color: 0xff5a4a, size: .32, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  scene.add(sparks); let spNext = 0;
+  function burst(x, y, z, k) {
+    for (let j = 0; j < k; j++) {
+      const i = spNext = (spNext + 1) % SP;
+      spPos.set([x + (Math.random() - .5) * .4, y, z + (Math.random() - .5) * .4], i * 3);
+      spVel.set([(Math.random() - .5) * 3, 3 + Math.random() * 5, (Math.random() - .5) * 3], i * 3); spLife[i] = 1;
+    }
+  }
+
+  let slide = 1, lastSampleKey = '';
+  function update(d) {
+    const st = get(d, 'interfaces.interfaceStatuses', {});
+    ports = Object.keys(st).filter(p => /^Ethernet/.test(p)).sort(natural);
+    const k = ports.join(',') + '|' + ports.map(p => st[p].linkStatus).join(',');
+    if (k !== key0) { key0 = k; layout(st); }
+    const sk = ports.map(p => (HIST[p] || []).length).join(',') + JSON.stringify(RATES[ports[0]] || {});
+    if (sk !== lastSampleKey) { lastSampleKey = sk; slide = 0; }
+    // summary
+    let peak = null;
+    for (const p of ports) { const r = RATES[p], bw = (st[p] || {}).bandwidth; if (!r || !bw) continue; const u = Math.max(r.in, r.out) / bw; if (!peak || u > peak.u) peak = { p, u }; }
+    sum = `${ports.filter(p => st[p].linkStatus === 'connected').length} CONNECTED` + (peak ? ` · PEAK ${shortPort(peak.p)} ${(peak.u * 100).toFixed(1)}%` : ' · waiting for a second poll');
+  }
+  let sum = '—';
+
+  function place(t, dt) {
+    if (!inst || !D) return;
+    const st = get(D, 'interfaces.interfaceStatuses', {});
+    slide = Math.min(1, slide + dt * 1.6);
+    const e = 1 - Math.pow(1 - slide, 3);
+    let n = 0;
+    ports.forEach((p, i) => {
+      const bw = (st[p] || {}).bandwidth || 0, h = HIST[p] || [], x = xOf(i);
+      for (let a = 0; a < HLEN; a++) {
+        const r = h[a];
+        for (const [side, base, key] of [[-1, C_IN, 'in'], [1, C_OUT, 'out']]) {
+          const u = r && bw ? r[key] / bw : 0;
+          const grow = a === 0 ? e : 1;
+          const ht = r ? Math.max(.06, hgt(u)) * grow : 0;
+          dummy.position.set(x + side * (W / 2 + .03), 0, -(a - 1 + e) * DZ);
+          dummy.scale.set(r ? W : 0, r ? ht : 0, r ? DZ * .78 : 0);   // no sample: no column
+          dummy.updateMatrix(); inst.setMatrixAt(n, dummy.matrix);
+          inst.setColorAt(n, heat(base, u, a));
+          if (a === 0) {   // glow cap and sparks on the front row
+            const gsp = glows[i * 2 + (side > 0 ? 1 : 0)];
+            gsp.position.set(dummy.position.x, ht + .15, dummy.position.z); const s = .8 + u * 3.2; gsp.scale.set(s, s, 1);
+            gsp.material.color.copy(heat(base, u, 1)); gsp.material.opacity = r ? (.25 + u * .75) * (.85 + .15 * Math.sin(t * 5 + i)) : 0;
+            const disc = r ? (key === 'in' ? r.inDisc : r.outDisc) : 0;
+            if (disc > 0 && Math.random() < dt * (4 + Math.min(20, Math.log10(disc + 1) * 6))) burst(dummy.position.x, ht, dummy.position.z, 3);
+          }
+          n++;
+        }
+      }
+      deck[i].material.opacity = (st[p] || {}).linkStatus === 'connected' ? .7 + .3 * Math.sin(t * 3 + i * .7) : deck[i].material.opacity;
+    });
+    inst.count = n; inst.instanceMatrix.needsUpdate = true; inst.instanceColor.needsUpdate = true;
+    // sparks
+    for (let i = 0; i < SP; i++) {
+      if (spLife[i] <= 0) { spPos[i * 3 + 1] = -999; continue; }
+      spLife[i] -= dt * .9; spVel[i * 3 + 1] -= 9 * dt;
+      spPos[i * 3] += spVel[i * 3] * dt; spPos[i * 3 + 1] += spVel[i * 3 + 1] * dt; spPos[i * 3 + 2] += spVel[i * 3 + 2] * dt;
+    }
+    spGeo.attributes.position.needsUpdate = true;
+  }
+
+  // hover / tap readout
+  const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(); let pinned = null;
+  function pick(ev) {
+    if (!inst) return null;
+    const r = R.domElement.getBoundingClientRect();
+    mouse.set((ev.clientX - r.left) / r.width * 2 - 1, -(ev.clientY - r.top) / r.height * 2 + 1);
+    ray.setFromCamera(mouse, cam);
+    const h = ray.intersectObject(inst, false)[0];
+    if (!h) return null;
+    const per = 2 * HLEN; return { port: ports[Math.floor(h.instanceId / per)], age: Math.floor((h.instanceId % per) / 2) };
+  }
+  function show(sel) {
+    const el = $('scan');
+    if (!sel || !D) { el.style.display = 'none'; return; }
+    const st = get(D, 'interfaces.interfaceStatuses', {})[sel.port] || {}, h = HIST[sel.port] || [], r = h[sel.age], bw = st.bandwidth || 0;
+    const pk = h.reduce((m, x) => Math.max(m, x.in, x.out), 0);
+    const pct = v => bw ? ` (${(v / bw * 100).toFixed(1)}%)` : '';
+    const rows = [['STATUS', esc(st.linkStatus || '—')], ['SPEED', fmtSpeed(bw) + ' ' + esc(st.interfaceType || '')],
+      ['SAMPLE', sel.age === 0 ? 'latest poll' : `${sel.age} poll${sel.age > 1 ? 's' : ''} ago`],
+      ['IN', r ? fmtBps(r.in) + pct(r.in) : '—'], ['OUT', r ? fmtBps(r.out) + pct(r.out) : '—'],
+      ['DISCARDS', r ? `${r.inDisc.toFixed(0)} in · ${r.outDisc.toFixed(0)} out /s` : '—'], ['PEAK', h.length ? `${fmtBps(pk)}${pct(pk)} over ${h.length} polls` : '—']];
+    el.innerHTML = `<h3>${esc(sel.port)}</h3><div class="mini" style="margin-bottom:6px">${esc(st.description || '')}</div>` + rows.map(([k, v]) => `<div class="row"><span>${k}</span><span>${v}</span></div>`).join('');
+    el.style.display = 'block';
+  }
+  R.domElement.addEventListener('pointermove', ev => { if (ev.pointerType !== 'mouse') return; const s = pick(ev); if (!pinned) show(s); R.domElement.style.cursor = s ? 'pointer' : ''; });
+  let downAt = null;
+  R.domElement.addEventListener('pointerdown', ev => downAt = [ev.clientX, ev.clientY]);
+  R.domElement.addEventListener('pointerup', ev => { if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 6) return; pinned = pick(ev); show(pinned); });
+
+  function frameCamera() {
+    const span = ports.length * DX + 8, a = cam.aspect || 1.6;
+    const d = Math.max(38, span / a * 1.05 + 10);
+    ctl.target.set(0, MAXH * .3, -HLEN * DZ * .38);
+    cam.position.set(-span * .1, MAXH * .3 + d * .5, d * .82);
+    ctl.update();
+  }
+  const clock = new THREE.Clock();
+  function frame() {
+    const dt = Math.min(clock.getDelta(), .1);
+    if (R.domElement.style.display !== 'none') { place(clock.elapsedTime, dt); ctl.update(); R.render(scene, cam); }
+    requestAnimationFrame(frame);
+  }
+  function resize() { const r = host.getBoundingClientRect(); R.setSize(r.width, r.height, false); cam.aspect = r.width / Math.max(r.height, 1); cam.updateProjectionMatrix(); }
+  new ResizeObserver(resize).observe(host); resize();
+  requestAnimationFrame(frame);
+  window.__util = { cam, ctl, ports: () => ports };
+  return { update, canvas: R.domElement, summary: () => sum, frameCamera, clearScan: () => { pinned = null; } };
+})();
+
+/* =====================================================================================================
+   ENVIRONMENT: the chassis as a translucent hull. Each temperature sensor is a heat point inside it with a
+   gauge column above: fill = temperature, rings = setpoint (amber), alert (orange), critical (red), and a
+   trail of its last HLEN readings. Fans at the rear spin at their reported speed; PSUs glow with their draw;
+   airflow particles cross the box in the reported direction and pick up colour from the sensors they pass.
+   Sensor placement is grouped by name (chip, PSU, front, rear): the data carries no physical positions.
+   ===================================================================================================== */
+const THIST = {};   // sensor key -> newest-first temps
+const Therm = (() => {
+  const host = $('main');
+  const R = new THREE.WebGLRenderer({ antialias: true });
+  R.setPixelRatio(Math.min(devicePixelRatio, 2)); R.setClearColor(0x02070b);
+  R.domElement.style.display = 'none'; host.prepend(R.domElement);
+  const scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x02070b, 40, 110);
+  const cam = new THREE.PerspectiveCamera(42, 1, .1, 300);
+  const ctl = new THREE.OrbitControls(cam, R.domElement);
+  ctl.enableDamping = true; ctl.dampingFactor = .08; ctl.enablePan = false; ctl.minDistance = 12; ctl.maxDistance = 90;
+  ctl.autoRotate = true; ctl.autoRotateSpeed = .25; ctl.addEventListener('start', () => ctl.autoRotate = false);
+  scene.add(new THREE.HemisphereLight(0x9fdcff, 0x0a1420, .7));
+  const key = new THREE.DirectionalLight(0xffffff, .8); key.position.set(-15, 30, 20); scene.add(key);
+
+  const BX = 18, BY = 3, BZ = 11, GH = 9;   // chassis half-extents are BX/2.., gauge height above the lid
+  const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); const g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.25, 'rgba(255,255,255,.35)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+  function label(text, sub, color, px = 22) {
+    const c = document.createElement('canvas'), x = c.getContext('2d');
+    x.font = `600 ${px}px "Share Tech Mono", monospace`; const w1 = x.measureText(text).width;
+    x.font = `${px * .8}px "Share Tech Mono", monospace`; const w2 = sub ? x.measureText(sub).width : 0;
+    c.width = Math.ceil(Math.max(w1, w2) + 12); c.height = Math.ceil(px * (sub ? 2.2 : 1.4));
+    x.font = `600 ${px}px "Share Tech Mono", monospace`; x.fillStyle = color; x.textBaseline = 'top'; x.fillText(text, 6, 2);
+    if (sub) { x.font = `${px * .8}px "Share Tech Mono", monospace`; x.fillStyle = '#7fb3c2'; x.fillText(sub, 6, px * 1.25); }
+    const t = new THREE.CanvasTexture(c); t.minFilter = THREE.LinearFilter;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, depthTest: false }));
+    s.scale.set(c.width * .019, c.height * .019, 1); s.center.set(.5, 0); s.renderOrder = 5; return s;
+  }
+  const C_COOL = new THREE.Color(0x56e0ff), C_OK = new THREE.Color(0x3dffa0), C_AMB = new THREE.Color(0xffb340), C_RED = new THREE.Color(0xff4b4b);
+  const tc = new THREE.Color();
+  function tempColor(s, temp) {   // cool -> green -> amber at setpoint -> red at alert
+    const sp = s.setpoint || 80, al = s.alert_limit || sp * 1.1;
+    const f = temp / sp;
+    if (f < .6) return tc.copy(C_COOL);
+    if (f < .85) return tc.copy(C_COOL).lerp(C_OK, (f - .6) / .25);
+    if (temp < sp) return tc.copy(C_OK).lerp(C_AMB, (f - .85) / .15);
+    if (temp < al) return tc.copy(C_AMB).lerp(C_RED, .35 * (temp - sp) / Math.max(1, al - sp));   // past setpoint: fans ramping, still amber
+    return tc.copy(C_RED);
+  }
+
+  // ---- the hull
+  const hull = new THREE.Group(); scene.add(hull);
+  const boxG = new THREE.BoxGeometry(BX, BY, BZ);
+  const shell = new THREE.Mesh(boxG, new THREE.MeshStandardMaterial({ color: 0x0b2430, metalness: .5, roughness: .35, transparent: true, opacity: .16, depthWrite: false, side: THREE.DoubleSide }));
+  shell.position.y = BY / 2; hull.add(shell);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(boxG), new THREE.LineBasicMaterial({ color: 0x56e0ff, transparent: true, opacity: .8 }));
+  edges.position.y = BY / 2; hull.add(edges);
+  const floorM = new THREE.Mesh(new THREE.PlaneGeometry(BX, BZ), new THREE.MeshStandardMaterial({ color: 0x07161d, metalness: .4, roughness: .6 }));
+  floorM.rotation.x = -Math.PI / 2; floorM.position.y = .01; hull.add(floorM);
+  { // board traces on the floor
+    const pts = []; for (let i = 0; i < 40; i++) { const x = (Math.random() - .5) * BX * .9, z = (Math.random() - .5) * BZ * .9, l = 1 + Math.random() * 3; if (Math.random() < .5) pts.push(x, .03, z, x + l, .03, z); else pts.push(x, .03, z, x, .03, z + l); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    hull.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x2f7d93, transparent: true, opacity: .35 })));
+  }
+  // front panel port strip and the FRONT / REAR marks
+  const portStrip = new THREE.Mesh(new THREE.PlaneGeometry(BX * .86, BY * .5), new THREE.MeshBasicMaterial({ color: 0x0f3340, transparent: true, opacity: .9 }));
+  portStrip.position.set(0, BY / 2, BZ / 2 + .01); hull.add(portStrip);
+  for (let i = 0; i < 32; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(.32, .3), new THREE.MeshBasicMaterial({ color: 0x3dffa0, transparent: true, opacity: .7 })); m.position.set(-BX * .41 + i * BX * .82 / 31, BY / 2 + (i % 2 ? .3 : -.3), BZ / 2 + .02); hull.add(m); }
+  const fl = label('FRONT · PORTS', null, '#7fb3c2', 20); fl.position.set(0, -1.6, BZ / 2 + .5); hull.add(fl);
+  const rl = label('REAR', null, '#7fb3c2', 20); rl.position.set(0, -1.6, -BZ / 2 - .5); hull.add(rl);
+  const flowL = label('', null, '#56e0ff', 20); hull.add(flowL);
+
+  // ---- dynamic parts, rebuilt when the sensor / fan / PSU set changes
+  const dyn = new THREE.Group(); scene.add(dyn);
+  let sensors = [], fans = [], psus = [], sig = '', flowDir = -1;
+  const sKey = s => `${s.id}:${s.description}`;
+  function groupOf(s) {
+    const d = (s.description || '').toLowerCase();
+    if (s.psu || /psu|power ?supply|pwr/.test(d)) return 'psu';
+    if (/cpu/.test(d)) return 'cpu';
+    if (/stat|fe\d|fap|jericho|ramon|chip|asic|switch|fabric|tomahawk|trident|sand/.test(d)) return 'chip';
+    if (/front|inlet|intake|ambient/.test(d)) return 'front';
+    if (/rear|outlet|exhaust|back/.test(d)) return 'rear';
+    return 'board';
+  }
+  function clear(g) { while (g.children.length) { const m = g.children.pop(); m.traverse(o => { o.geometry && o.geometry.dispose(); if (o.material) { o.material.map && o.material.map.dispose(); o.material.dispose(); } }); } }
+
+  function build(env) {
+    clear(dyn); sensors = []; fans = []; psus = [];
+    const S = env.sensors || [], F = env.fans || [], P = env.power_supplies || [];
+    // PSUs: rear left, stacked along x
+    P.forEach((p, i) => {
+      const g = new THREE.Group(); g.position.set(-BX / 2 + 1.8 + i * 3.2, 0, -BZ / 2 + 1.9); dyn.add(g);
+      const box = new THREE.Mesh(new THREE.BoxGeometry(2.8, BY * .8, 3.2), new THREE.MeshStandardMaterial({ color: 0x14242c, metalness: .6, roughness: .4, emissive: 0xffb340, emissiveIntensity: 0 }));
+      box.position.y = BY * .4; g.add(box);
+      g.add(Object.assign(new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), new THREE.LineBasicMaterial({ color: 0xffb340, transparent: true, opacity: .7 })), {}));
+      g.children[1].position.copy(box.position);
+      const lb = label(`PSU${p.id}`, '', '#ffb340', 20); lb.position.set(0, BY + .4, 0); g.add(lb);
+      psus.push({ p, g, box, lb, key: p.id, lastText: '' });
+    });
+    // fans: rear wall, right of the PSUs
+    const fx0 = -BX / 2 + 1.8 + P.length * 3.2 + 1, fx1 = BX / 2 - 1.2;
+    F.forEach((f, i) => {
+      const x = F.length > 1 ? fx0 + i * (fx1 - fx0) / (F.length - 1) : (fx0 + fx1) / 2;
+      const g = new THREE.Group(); g.position.set(x, BY / 2, -BZ / 2 - .05); dyn.add(g);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.05, .08, 8, 32), new THREE.MeshBasicMaterial({ color: 0x56e0ff })); g.add(ring);
+      const rotor = new THREE.Group(); g.add(rotor);
+      for (let b = 0; b < 5; b++) { const bl = new THREE.Mesh(new THREE.BoxGeometry(.18, .9, .05), new THREE.MeshBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: .8 })); bl.position.y = .45; const piv = new THREE.Group(); piv.rotation.z = b / 5 * Math.PI * 2; bl.rotation.y = .5; piv.add(bl); rotor.add(piv); }
+      const lb = label(`FAN ${f.id}`, '', '#9ff0ff', 18); lb.position.set(0, -1.9, -.4); g.add(lb);
+      fans.push({ f, g, ring, rotor, lb, lastText: '' });
+    });
+    // sensors, placed by group
+    const slots = { chip: [], cpu: [], psu: [], front: [], rear: [], board: [] };
+    S.forEach(s => slots[groupOf(s)].push(s));
+    const place = (list, x0, x1, z, y = BY * .55) => list.forEach((s, i) => mk(s, list.length > 1 ? x0 + i * (x1 - x0) / (list.length - 1) : (x0 + x1) / 2, y, z));
+    place(slots.chip, -BX * .22, BX * .36, -.4);
+    place(slots.cpu, -BX * .4, -BX * .3, 1.6);
+    place(slots.front, -BX * .35, BX * .35, BZ / 2 - 1);
+    place(slots.rear, BX * .05, BX * .4, -BZ / 2 + 1.2);
+    place(slots.board, -BX * .2, BX * .3, 2.6);
+    // PSU sensors sit on their PSU (by the parser's psu field, or the number in the name), else over the PSU bank
+    slots.psu.forEach((s, i) => {
+      const n = s.psu || +((s.description || '').match(/psu ?(\d)/i) || [])[1] || (i % Math.max(1, psus.length)) + 1;
+      const ps = psus.find(q => +q.p.id === +n) || psus[i % Math.max(1, psus.length)];
+      const pos = ps ? ps.g.position : new THREE.Vector3(-BX * .35, 0, -BZ * .3);
+      const k = slots.psu.filter((q, j) => j < i && (q.psu || 0) === (s.psu || 0)).length;
+      mk(s, pos.x + (k % 2 ? .7 : -.7), BY * .9, pos.z + (k > 1 ? .9 : -.4));
+    });
+    flowL.position.set(-BX / 2 - 1.2, BY + 1.2, 0);
+  }
+  function mk(s, x, y, z) {
+    const g = new THREE.Group(); g.position.set(x, 0, z); dyn.add(g);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(.28, 16, 12), new THREE.MeshBasicMaterial({ color: 0x56e0ff }));
+    core.position.y = y; g.add(core);
+    const haze = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x56e0ff, transparent: true, opacity: .5, depthWrite: false, blending: THREE.AdditiveBlending }));
+    haze.position.y = y; g.add(haze);
+    const stem = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, y, 0), new THREE.Vector3(0, BY, 0)]), new THREE.LineBasicMaterial({ color: 0x2f7d93, transparent: true, opacity: .6 }));
+    g.add(stem);
+    // gauge: glass tube, fill, and rings at setpoint / alert / critical
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(.22, .22, GH, 14, 1, true), new THREE.MeshBasicMaterial({ color: 0x56e0ff, transparent: true, opacity: .1, depthWrite: false, side: THREE.DoubleSide }));
+    tube.position.y = BY + GH / 2; g.add(tube);
+    const fillG = new THREE.CylinderGeometry(.16, .16, 1, 14); fillG.translate(0, .5, 0);
+    const fill = new THREE.Mesh(fillG, new THREE.MeshStandardMaterial({ color: 0x56e0ff, emissive: 0x56e0ff, emissiveIntensity: .6, metalness: .2, roughness: .4 }));
+    fill.position.y = BY; g.add(fill);
+    const rings = [];
+    for (const [k, c] of [['setpoint', 0xffb340], ['alert_limit', 0xff7a3a], ['critical_limit', 0xff4b4b]]) {
+      const r = new THREE.Mesh(new THREE.TorusGeometry(.34, .035, 6, 24), new THREE.MeshBasicMaterial({ color: c })); r.rotation.x = Math.PI / 2; g.add(r); rings.push([k, r]);
+    }
+    const trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: .7 })); g.add(trail);
+    const lb = label('', '', '#9ff0ff', 20); g.add(lb);
+    core.userData.sk = sKey(s);
+    sensors.push({ key: sKey(s), s, g, core, haze, fill, rings, trail, lb, lastText: '', heatY: y });
+  }
+
+  // scale for a sensor's gauge: 0 at the lid, critical (or setpoint × 1.25) at the top
+  const top = s => s.critical_limit || (s.setpoint || 80) * 1.25;
+  const yOf = (s, t) => BY + Math.max(0, Math.min(1, t / top(s))) * GH;
+
+  // ---- airflow
+  const NP = 520, pp = new Float32Array(NP * 3), pc = new Float32Array(NP * 3), pv = new Float32Array(NP);
+  for (let i = 0; i < NP; i++) { pp[i * 3] = (Math.random() - .5) * BX * .92; pp[i * 3 + 1] = .2 + Math.random() * (BY - .4); pp[i * 3 + 2] = (Math.random() - .5) * BZ; pv[i] = .7 + Math.random() * .6; }
+  const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pp, 3)); pg.setAttribute('color', new THREE.BufferAttribute(pc, 3));
+  const air = new THREE.Points(pg, new THREE.PointsMaterial({ size: .16, vertexColors: true, transparent: true, opacity: .85, depthWrite: false, blending: THREE.AdditiveBlending }));
+  scene.add(air);
+
+  let summary = '—';
+  function update(d) {
+    const env = d.environment || {};
+    const S = env.sensors || [], F = env.fans || [], P = env.power_supplies || [];
+    const sg = S.map(sKey).join('|') + '#' + F.map(f => f.id).join(',') + '#' + P.map(p => p.id).join(',');
+    if (sg !== sig) { sig = sg; build(env); }
+    const af = String(env.airflow || '').toLowerCase();
+    flowDir = /back.?to.?front|backtofront|port.?side exhaust|reverse/.test(af) ? 1 : -1;   // default: front (ports) to back
+    const ft = env.airflow ? `AIRFLOW ${String(env.airflow).replace(/([a-z])([A-Z])/g, '$1 $2').toUpperCase()}` : 'AIRFLOW —';
+    if (flowL.userData.t !== ft) { flowL.userData.t = ft; const n = label(ft, flowDir < 0 ? 'front → rear' : 'rear → front', '#56e0ff', 20); flowL.material.map && flowL.material.map.dispose(); flowL.material = n.material; flowL.scale.copy(n.scale); }
+    for (const x of sensors) { const s = S.find(q => sKey(q) === x.key); if (s) x.s = s; }
+    for (const x of fans) { const f = F.find(q => q.id === x.f.id); if (f) x.f = f; }
+    for (const x of psus) { const p = P.find(q => q.id === x.p.id); if (p) x.p = p; }
+    // labels that change with the readings
+    for (const x of sensors) {
+      const t = `${x.s.temp.toFixed(1)}°C`, sub = x.s.description;
+      if (t + sub !== x.lastText) { x.lastText = t + sub; const col = '#' + tempColor(x.s, x.s.temp).getHexString(); const n = label(t, sub, col, 20); x.lb.material.map && x.lb.material.map.dispose(); x.lb.material = n.material; x.lb.scale.copy(n.scale); }
+    }
+    for (const x of psus) {
+      const t = `PSU${x.p.id} ${Math.round(x.p.output_watts)}W`, sub = `${x.p.status} · ${Math.round(x.p.output_watts / (x.p.capacity_w || 1) * 100)}% of ${x.p.capacity_w}W`;
+      if (t + sub !== x.lastText) { x.lastText = t + sub; const n = label(t, sub, /ok/i.test(x.p.status) ? '#ffb340' : '#ff4b4b', 18); x.lb.material.map && x.lb.material.map.dispose(); x.lb.material = n.material; x.lb.scale.copy(n.scale); }
+    }
+    for (const x of fans) {
+      const t = `FAN ${x.f.id} ${x.f.actual_speed}%`;
+      if (t !== x.lastText) { x.lastText = t; const n = label(t, x.f.status, /ok/i.test(x.f.status) ? '#9ff0ff' : '#ff4b4b', 18); x.lb.material.map && x.lb.material.map.dispose(); x.lb.material = n.material; x.lb.scale.copy(n.scale); }
+    }
+    [...sensors].sort((a, b) => b.s.temp / (b.s.setpoint || 99) - a.s.temp / (a.s.setpoint || 99)).forEach((x, i) => x.rank = i);
+    // summary: the sensor closest to (or furthest past) its setpoint
+    let w = null; for (const s of S) { const m = (s.setpoint || 999) - s.temp; if (!w || m < w.m) w = { s, m }; }
+    summary = w ? `${S.length} SENSORS · ${w.s.description.toUpperCase()} ${w.s.temp.toFixed(1)}°C · ${w.m < 0 ? `${(-w.m).toFixed(1)}° OVER SETPOINT` : `${w.m.toFixed(1)}° TO SETPOINT`} · ${((w.s.alert_limit || w.s.setpoint + 5) - w.s.temp).toFixed(1)}° TO ALERT` : 'no environment data';
+  }
+
+  const v3 = new THREE.Vector3();
+  function animate(t, dt) {
+    for (const x of sensors) {
+      const s = x.s, col = tempColor(s, s.temp), sp = s.setpoint || 80, f = s.temp / sp;
+      x.core.material.color.copy(col);
+      x.haze.material.color.copy(col);
+      const hs = 1.2 + Math.max(0, f - .5) * 7; x.haze.scale.set(hs, hs, 1);
+      x.haze.material.opacity = (.25 + Math.max(0, f - .6) * 1.2) * (s.temp >= (s.alert_limit || sp + 5) ? .8 + .2 * Math.sin(t * 6) : 1);
+      const h = yOf(s, s.temp) - BY;
+      x.fill.scale.y += (Math.max(.05, h) - x.fill.scale.y) * Math.min(1, dt * 4);
+      x.fill.material.color.copy(col); x.fill.material.emissive.copy(col);
+      for (const [k, r] of x.rings) { const v = k === 'setpoint' ? s.setpoint : k === 'alert_limit' ? s.alert_limit : s.critical_limit; r.visible = v > 0; if (v > 0) r.position.y = yOf(s, v); }
+      x.lb.position.set(0, BY + x.fill.scale.y + .5 + (sensors.indexOf(x) % 2) * .9, 0);
+      x.lb.visible = x.rank < 6 || x.key === hoverKey || x.key === pinned;
+      // trail: last readings stepping back along -z from the gauge, at their heights
+      const hist = THIST[x.key] || [];
+      const pts = hist.slice(0, HLEN).map((tv, k) => new THREE.Vector3(.0, yOf(s, tv), -k * .14));
+      if (pts.length > 1) { x.trail.geometry.setFromPoints(pts); x.trail.visible = true; x.trail.material.color.copy(col); } else x.trail.visible = false;
+    }
+    let fanAvg = 0;
+    for (const x of fans) {
+      const sp = (x.f.actual_speed || 0) / 100; fanAvg += sp;
+      x.rotor.rotation.z += dt * (2 + sp * 30);
+      x.ring.material.color.setHex(/ok/i.test(x.f.status) ? 0x56e0ff : 0xff4b4b);
+      x.lb.position.set(0, -1.9, -.4);
+    }
+    fanAvg = fans.length ? fanAvg / fans.length : .4;
+    for (const x of psus) {
+      const u = (x.p.output_watts || 0) / (x.p.capacity_w || 1);
+      x.box.material.emissiveIntensity = .15 + u * 1.4 + .08 * Math.sin(t * 3 + x.p.id);
+      x.box.material.emissive.setHex(/ok/i.test(x.p.status) ? 0xffb340 : 0xff4b4b);
+    }
+    // airflow: speed from the fans; colour from the sensors each particle passes
+    const speed = (2 + fanAvg * 9) * flowDir;
+    for (let i = 0; i < NP; i++) {
+      let z = pp[i * 3 + 2] + speed * pv[i] * dt;
+      if (z < -BZ / 2) { z = BZ / 2; pp[i * 3] = (Math.random() - .5) * BX * .92; pp[i * 3 + 1] = .2 + Math.random() * (BY - .4); }
+      if (z > BZ / 2) { z = -BZ / 2; pp[i * 3] = (Math.random() - .5) * BX * .92; pp[i * 3 + 1] = .2 + Math.random() * (BY - .4); }
+      pp[i * 3 + 2] = z;
+      let heat = 0; const px = pp[i * 3], py = pp[i * 3 + 1];
+      for (const x of sensors) {
+        const dx = px - x.g.position.x, dy = py - x.heatY, dz = z - x.g.position.z;
+        const k = Math.exp(-(dx * dx + dy * dy + dz * dz) / 6);
+        heat += k * Math.max(0, x.s.temp / (x.s.setpoint || 80) - .55) * 2.2;
+      }
+      // downstream of the heat, air stays warm: blend by distance travelled
+      const prog = flowDir < 0 ? (BZ / 2 - z) / BZ : (z + BZ / 2) / BZ;
+      const w = Math.min(1, heat + prog * .25);
+      tc.copy(C_COOL).lerp(w > .6 ? C_RED : C_AMB, Math.min(1, w));
+      pc[i * 3] = tc.r * .9; pc[i * 3 + 1] = tc.g * .9; pc[i * 3 + 2] = tc.b * .9;
+    }
+    pg.attributes.position.needsUpdate = true; pg.attributes.color.needsUpdate = true;
+    edges.material.color.copy(sensors.some(x => x.s.temp >= (x.s.alert_limit || (x.s.setpoint || 999) + 5)) ? C_RED : sensors.some(x => x.s.temp >= (x.s.setpoint || 999)) ? C_AMB : C_COOL);
+  }
+
+  // hover / tap readout
+  const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(); let pinned = null;
+  function pick(ev) {
+    const r = R.domElement.getBoundingClientRect();
+    mouse.set((ev.clientX - r.left) / r.width * 2 - 1, -(ev.clientY - r.top) / r.height * 2 + 1);
+    ray.setFromCamera(mouse, cam);
+    const objs = []; for (const x of sensors) objs.push(x.core, x.fill);
+    const h = ray.intersectObjects(objs, false)[0]; if (!h) return null;
+    return sensors.find(x => x.core === h.object || x.fill === h.object).key;
+  }
+  function show(k) {
+    const el = $('scan'), x = sensors.find(q => q.key === k);
+    if (!x) { el.style.display = 'none'; return; }
+    const s = x.s, h = THIST[k] || [], d = h.length > 1 ? h[0] - h[h.length - 1] : 0;
+    const rows = [['TEMP', `${s.temp.toFixed(1)}°C`], ['SETPOINT', `${s.setpoint}°C · ${(s.setpoint - s.temp).toFixed(1)}° headroom`],
+      ['ALERT', `${s.alert_limit ?? '—'}°C`], ['CRITICAL', `${s.critical_limit ?? '—'}°C`],
+      ['TREND', h.length > 1 ? `${d >= 0 ? '+' : ''}${d.toFixed(1)}° over ${h.length} polls` : '—'],
+      ['RANGE', h.length ? `${Math.min(...h).toFixed(1)} – ${Math.max(...h).toFixed(1)}°C` : '—'], ['PLACED AS', groupOf(s).toUpperCase()]];
+    el.innerHTML = `<h3>${esc(s.description)}</h3><div class="mini" style="margin-bottom:6px">sensor ${esc(s.id)}${s.psu ? ' · PSU' + esc(s.psu) : ''}</div>` + rows.map(([a, b]) => `<div class="row"><span>${a}</span><span>${b}</span></div>`).join('');
+    el.style.display = 'block';
+  }
+  let hoverKey = null;
+  R.domElement.addEventListener('pointermove', ev => { if (ev.pointerType !== 'mouse') return; const k = pick(ev); hoverKey = k; if (!pinned) show(k); R.domElement.style.cursor = k ? 'pointer' : ''; });
+  let downAt = null;
+  R.domElement.addEventListener('pointerdown', ev => downAt = [ev.clientX, ev.clientY]);
+  R.domElement.addEventListener('pointerup', ev => { if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 6) return; pinned = pick(ev); show(pinned); });
+
+  function frameCamera() {
+    const a = cam.aspect || 1.6, d = Math.max(30, 38 / Math.min(1.4, a));
+    ctl.target.set(0, BY + GH * .45, -1);
+    cam.position.set(d * .5, BY + d * .42, d * .78); ctl.update();
+  }
+  const clock = new THREE.Clock();
+  (function frame() {
+    const dt = Math.min(clock.getDelta(), .1);
+    if (R.domElement.style.display !== 'none') { animate(clock.elapsedTime, dt); ctl.update(); R.render(scene, cam); }
+    requestAnimationFrame(frame);
+  })();
+  function resize() { const r = host.getBoundingClientRect(); R.setSize(r.width, r.height, false); cam.aspect = r.width / Math.max(r.height, 1); cam.updateProjectionMatrix(); }
+  new ResizeObserver(resize).observe(host); resize(); frameCamera();
+  window.__therm = { cam, ctl };
+  return { update, canvas: R.domElement, summary: () => summary, frameCamera, clearScan: () => { pinned = null; } };
+})();
+
+/* =====================================================================================================
+   BGP: the router at the centre inside a shield. Each peer owns a segment of the shield and sits outside it
+   on its own bearing: iBGP (same AS) on the inner orbit, eBGP on the outer. The beam from core to peer carries
+   UPDATE traffic as particles (message rates from msgSent / msgReceived deltas between polls). The column on
+   each peer is its received-prefix count (log scale); the arc around it is session uptime (log, a year = full).
+   A peer that is not Established breaks its beam, drops out to the edge and leaves its shield segment broken
+   and red; any state change sends a shockwave across the shield. Prefix loss against the session's own
+   recent peak turns the segment amber.
+   ===================================================================================================== */
+const BHIST = {};   // peer ip -> newest-first [{rx, acc, mIn, mOut}]
+const Bgp = (() => {
+  const host = $('main');
+  const R = new THREE.WebGLRenderer({ antialias: true });
+  R.setPixelRatio(Math.min(devicePixelRatio, 2)); R.setClearColor(0x02070b);
+  R.domElement.style.display = 'none'; host.prepend(R.domElement);
+  const scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0x02070b, .008);
+  const cam = new THREE.PerspectiveCamera(46, 1, .1, 400);
+  const ctl = new THREE.OrbitControls(cam, R.domElement);
+  ctl.enableDamping = true; ctl.dampingFactor = .08; ctl.enablePan = false; ctl.minDistance = 18; ctl.maxDistance = 120;
+  ctl.autoRotate = true; ctl.autoRotateSpeed = .3; ctl.addEventListener('start', () => ctl.autoRotate = false);
+  scene.add(new THREE.HemisphereLight(0x9fdcff, 0x0a1420, .8));
+  const keyL = new THREE.DirectionalLight(0xffffff, .7); keyL.position.set(-10, 25, 15); scene.add(keyL);
+
+  const SR = 9, R_IN = 17, R_OUT = 24, R_DOWN = 32;
+  const C_OK = new THREE.Color(0x56e0ff), C_WARN = new THREE.Color(0xffb340), C_BAD = new THREE.Color(0xff4b4b), C_IBGP = new THREE.Color(0x3dffa0), C_EBGP = new THREE.Color(0xffb340);
+  const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); const g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.25, 'rgba(255,255,255,.3)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+  function label(text, sub, color, px = 22) {
+    const c = document.createElement('canvas'), x = c.getContext('2d');
+    x.font = `600 ${px}px "Chakra Petch", sans-serif`; const w1 = x.measureText(text).width;
+    x.font = `${px * .74}px "Share Tech Mono", monospace`; const w2 = sub ? Math.max(...sub.split('\n').map(l => x.measureText(l).width)) : 0;
+    const lines = sub ? sub.split('\n') : [];
+    c.width = Math.ceil(Math.max(w1, w2) + 12); c.height = Math.ceil(px * 1.35 + lines.length * px * .9);
+    x.font = `600 ${px}px "Chakra Petch", sans-serif`; x.fillStyle = color; x.textBaseline = 'top'; x.shadowColor = color; x.shadowBlur = 6; x.fillText(text, 6, 2);
+    x.shadowBlur = 0; x.font = `${px * .74}px "Share Tech Mono", monospace`; x.fillStyle = '#7fb3c2';
+    lines.forEach((l, i) => x.fillText(l, 6, px * 1.3 + i * px * .9));
+    const t = new THREE.CanvasTexture(c); t.minFilter = THREE.LinearFilter;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, depthTest: false }));
+    s.scale.set(c.width * .036, c.height * .036, 1); s.center.set(.5, 0); s.renderOrder = 6; return s;
+  }
+  const relabel = (spr, ...a) => { const n = label(...a); spr.material.map && spr.material.map.dispose(); spr.material.dispose(); spr.material = n.material; spr.scale.copy(n.scale); };
+
+  // ---- floor rings
+  for (const [r, o] of [[R_IN, .3], [R_OUT, .3], [R_DOWN, .15]]) {
+    const g = new THREE.BufferGeometry().setFromPoints(Array.from({ length: 129 }, (_, i) => new THREE.Vector3(r * Math.cos(i / 128 * Math.PI * 2), -3, r * Math.sin(i / 128 * Math.PI * 2))));
+    scene.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x2f7d93, transparent: true, opacity: o })));
+  }
+  const ringLbl = (t, r) => { const l = label(t, null, '#4f8a99', 16); l.position.set(0, -3, r + .6); l.center.set(.5, 1); scene.add(l); };
+  ringLbl('iBGP', R_IN); ringLbl('eBGP', R_OUT); ringLbl('NOT ESTABLISHED', R_DOWN);
+
+  // ---- the core: this router
+  const core = new THREE.Group(); scene.add(core);
+  const coreS = new THREE.Mesh(new THREE.IcosahedronGeometry(2.2, 1), new THREE.MeshStandardMaterial({ color: 0x0d2a36, emissive: 0x1a6f88, emissiveIntensity: .6, metalness: .6, roughness: .3, flatShading: true }));
+  core.add(coreS);
+  const coreW = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(2.6, 1)), new THREE.LineBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: .8 }));
+  core.add(coreW);
+  const coreG = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x56e0ff, transparent: true, opacity: .5, depthWrite: false, blending: THREE.AdditiveBlending })); coreG.scale.set(12, 12, 1); core.add(coreG);
+  const coreL = label('—', '', '#9ff0ff', 24); coreL.position.set(0, SR + 1.2, 0); core.add(coreL);
+  let coreText = '';
+
+  // ---- shield: one segment per peer on an upper band of a sphere, plus a faint full shell
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(SR, 48, 24), new THREE.MeshBasicMaterial({ color: 0x56e0ff, transparent: true, opacity: .025, depthWrite: false, side: THREE.DoubleSide }));
+  scene.add(shell);
+  const segG = new THREE.Group(); scene.add(segG);
+  const T0 = Math.PI * .12, T1 = Math.PI * .62;   // band from near the top to just below the equator
+
+  // ---- peers
+  const peers = new Map();   // ip -> peer object
+  let sig = '', localAs = '', lastT = 0;
+  const shock = [];          // active shockwaves
+
+  function mkPeer(ip) {
+    const g = new THREE.Group(); scene.add(g);
+    const node = new THREE.Mesh(new THREE.OctahedronGeometry(1.1), new THREE.MeshStandardMaterial({ color: 0x56e0ff, emissive: 0x56e0ff, emissiveIntensity: .5, metalness: .4, roughness: .3, flatShading: true }));
+    g.add(node);
+    const nodeW = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.OctahedronGeometry(1.6)), new THREE.LineBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: .8 })); g.add(nodeW);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x56e0ff, transparent: true, opacity: .35, depthWrite: false, blending: THREE.AdditiveBlending })); halo.scale.set(7, 7, 1); g.add(halo);
+    // prefix column below the node (log scale: 1M prefixes = full)
+    const colG = new THREE.CylinderGeometry(.35, .35, 1, 12); colG.translate(0, -.5, 0);
+    const col = new THREE.Mesh(colG, new THREE.MeshStandardMaterial({ color: 0x56e0ff, emissive: 0x56e0ff, emissiveIntensity: .7, transparent: true, opacity: .85 }));
+    col.position.y = -1.4; g.add(col);
+    const colTicks = new THREE.Group(); g.add(colTicks);
+    for (const k of [1, 2, 3, 4, 5, 6]) { const r = new THREE.Mesh(new THREE.TorusGeometry(.5, .03, 4, 16), new THREE.MeshBasicMaterial({ color: 0x2f7d93, transparent: true, opacity: .6 })); r.rotation.x = Math.PI / 2; r.position.y = -1.4 - k / 6 * 7; r.userData.k = k; colTicks.add(r); }
+    // uptime arc
+    const up = new THREE.Mesh(new THREE.TorusGeometry(2.3, .09, 6, 64, .01), new THREE.MeshBasicMaterial({ color: 0x3dffa0 })); g.add(up);
+    const upBg = new THREE.Mesh(new THREE.TorusGeometry(2.3, .04, 6, 64), new THREE.MeshBasicMaterial({ color: 0x1d4a5a, transparent: true, opacity: .6 })); g.add(upBg);
+    const lb = label(ip, '', '#9ff0ff', 22); lb.position.y = 2.6; g.add(lb);
+    // beam and traffic
+    const beamGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)]);
+    const beam = new THREE.Line(beamGeo, new THREE.LineDashedMaterial({ color: 0x56e0ff, dashSize: 1e3, gapSize: 0, transparent: true, opacity: .55 })); scene.add(beam);
+    const N = 60, mk = c => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3)); const p = new THREE.Points(geo, new THREE.PointsMaterial({ color: c, size: .45, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); scene.add(p); return p; };
+    const pIn = mk(0x9ff0ff), pOut = mk(0xc49bff), phase = Float32Array.from({ length: N }, () => Math.random());
+    node.userData.ip = ip;
+    return { ip, g, node, nodeW, halo, col, colTicks, up, upBg, lb, beam, pIn, pOut, phase, pos: new THREE.Vector3(), target: new THREE.Vector3(), seg: null, segW: null, az: 0,
+             p: {}, state: '', lastText: '', rateIn: 0, rateOut: 0, peak: 0, hit: 0 };
+  }
+  function disposePeer(x) {
+    for (const o of [x.g, x.beam, x.pIn, x.pOut]) { scene.remove(o); o.traverse(m => { m.geometry && m.geometry.dispose(); if (m.material) { m.material.map && m.material.map.dispose(); m.material.dispose(); } }); }
+  }
+
+  function buildSegments() {
+    while (segG.children.length) { const m = segG.children.pop(); m.geometry.dispose(); m.material.dispose(); }
+    const list = [...peers.values()], n = Math.max(1, list.length), gap = n > 1 ? .05 : 0;
+    list.forEach((x, i) => {
+      const a0 = i / n * Math.PI * 2 + gap, len = Math.PI * 2 / n - gap * 2;
+      x.az = a0 + len / 2;
+      const geo = new THREE.SphereGeometry(SR, Math.max(6, Math.round(48 / n)), 12, a0, len, T0, T1 - T0);
+      x.seg = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x56e0ff, transparent: true, opacity: .14, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+      x.segW = new THREE.LineSegments(new THREE.WireframeGeometry(new THREE.SphereGeometry(SR + .02, Math.max(4, Math.round(24 / n)), 6, a0, len, T0, T1 - T0)), new THREE.LineBasicMaterial({ color: 0x56e0ff, transparent: true, opacity: .35 }));
+      segG.add(x.seg, x.segW);
+    });
+  }
+
+  // three.js sphere azimuth: x = -cos(phi)·sinθ, z = sin(phi)·sinθ
+  const azPos = (az, r, y) => new THREE.Vector3(-Math.cos(az) * r, y, Math.sin(az) * r);
+
+  let summary = '—';
+  function update(d) {
+    const v = get(d, 'bgp.vrfs.default', {}), P = v.peers || {};
+    localAs = String(v.asn || '');
+    const t = get(d, 'meta.timestamp', Date.now() / 1000), dt = lastT && t > lastT ? t - lastT : 0; lastT = t;
+    const ips = Object.keys(P).sort((a, b) => natural(a, b));
+    const s2 = ips.join(',');
+    for (const ip of ips) if (!peers.has(ip)) peers.set(ip, mkPeer(ip));
+    for (const [ip, x] of peers) if (!P[ip]) { disposePeer(x); peers.delete(ip); }
+    if (s2 !== sig) { sig = s2; buildSegments(); }
+    let up = 0, rx = 0;
+    for (const [ip, x] of peers) {
+      const p = P[ip], prev = x.p;
+      // message rates from the counters between polls
+      if (dt && prev.msgReceived != null) { x.rateIn = Math.max(0, (p.msgReceived - prev.msgReceived) / dt); x.rateOut = Math.max(0, (p.msgSent - prev.msgSent) / dt); }
+      const est = p.peerState === 'Established';
+      if (x.state && x.state !== p.peerState) { shock.push({ az: x.az, t: 0, bad: !est }); x.hit = 1; bgpToast(`BGP ${ip} ${(p.description || '').toUpperCase()} · ${String(p.peerState).toUpperCase()}`, !est); }
+      x.state = p.peerState; x.p = { ...p };
+      const h = BHIST[ip] = BHIST[ip] || [];
+      h.unshift({ rx: p.prefixReceived || 0, acc: p.prefixAccepted || 0, mIn: x.rateIn, mOut: x.rateOut }); if (h.length > HLEN) h.pop();
+      x.peak = Math.max(...h.map(e => e.rx));
+      const ibgp = String(p.asn) === localAs;
+      x.target.copy(azPos(x.az, est ? (ibgp ? R_IN : R_OUT) : R_DOWN, est ? 2 : -1));
+      if (x.pos.lengthSq() === 0) x.pos.copy(x.target).multiplyScalar(1.5);
+      if (est) { up++; rx += p.prefixReceived || 0; }
+      const upS = uptimeOf(p);
+      const sub = est ? `${esc0(p.description)}\nAS${p.asn} ${ibgp ? 'iBGP' : 'eBGP'} · ${(p.prefixReceived || 0).toLocaleString()} pfx\nup ${fmtUp(upS)}` : `${esc0(p.description)}\nAS${p.asn} · ${String(p.peerState).toUpperCase()}\ndown ${fmtUp(upS)}`;
+      const txt = ip + sub;
+      if (txt !== x.lastText) { x.lastText = txt; relabel(x.lb, ip, sub, est ? '#9ff0ff' : '#ff7a6a', 22); }
+    }
+    const rid = v.routerId || '';
+    const ct = `AS${localAs}|RID ${rid}\n${(get(d, 'routes.vrfs.default.totalRoutes', 0) || 0).toLocaleString()} routes in RIB`;
+    if (ct !== coreText) { coreText = ct; const [a, b] = ct.split('|'); relabel(coreL, a, b, '#9ff0ff', 26); }
+    summary = `${up}/${peers.size} ESTABLISHED · ${rx.toLocaleString()} PFX RECEIVED`;
+  }
+  const esc0 = s => String(s || '');
+  function uptimeOf(p) {   // EOS gives the epoch of the last state change; tolerate a duration too
+    const u = +p.upDownTime || 0;
+    return u > 1e9 ? Math.max(0, Date.now() / 1000 - u) : u;
+  }
+
+  let toastT = 0;
+  function bgpToast(t, bad) { const e = $('toast'); e.textContent = t; e.style.color = bad ? 'var(--bad)' : 'var(--ok)'; e.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => e.classList.remove('on'), 3500); }
+
+  const tmpC = new THREE.Color();
+  function animate(t, dt) {
+    coreW.rotation.y += dt * .3; coreW.rotation.x += dt * .1; coreS.rotation.y -= dt * .15;
+    coreG.material.opacity = .4 + .1 * Math.sin(t * 2);
+    shell.material.opacity = .02 + .01 * Math.sin(t * 1.3);
+    for (const [ip, x] of peers) {
+      const p = x.p, est = p.peerState === 'Established';
+      x.pos.lerp(x.target, 1 - Math.exp(-dt * 2));
+      x.g.position.copy(x.pos).add(new THREE.Vector3(0, Math.sin(t * 1.1 + x.az * 2) * .3, 0));
+      x.nodeW.rotation.y += dt * .6; x.node.rotation.y -= dt * .4;
+      // health: established and holding its prefixes (vs its own recent peak) = cyan; lost >10% = amber; down = red
+      const lossy = est && x.peak > 20 && (p.prefixReceived || 0) < x.peak * .9;
+      const c = !est ? C_BAD : lossy ? C_WARN : C_OK;
+      const kind = String(p.asn) === localAs ? C_IBGP : C_EBGP;
+      x.node.material.color.copy(est ? kind : C_BAD); x.node.material.emissive.copy(est ? kind : C_BAD);
+      x.nodeW.material.color.copy(c); x.halo.material.color.copy(c);
+      x.halo.material.opacity = est ? .3 + x.hit * .5 : .25 + .2 * Math.sin(t * 7);
+      x.hit = Math.max(0, x.hit - dt * .8);
+      // prefix column: log10, 6 decades = 7 units
+      const pf = Math.log10((p.prefixReceived || 0) + 1) / 6 * 7;
+      x.col.scale.y += (Math.max(.05, pf) - x.col.scale.y) * Math.min(1, dt * 3);
+      x.col.material.color.copy(c); x.col.material.emissive.copy(c);
+      for (const r of x.colTicks.children) r.material.opacity = r.userData.k / 6 * 7 <= pf + .01 ? .9 : .25;
+      // uptime arc: log scale, a year closes the ring
+      const upS = uptimeOf(p), frac = Math.min(1, Math.log1p(upS) / Math.log1p(365 * 86400));
+      x.up.geometry.dispose(); x.up.geometry = new THREE.TorusGeometry(2.3, .09, 6, 64, Math.max(.01, frac * Math.PI * 2));
+      x.up.material.color.copy(est ? C_IBGP : C_BAD);
+      x.up.lookAt(cam.position); x.upBg.quaternion.copy(x.up.quaternion);
+      // beam: solid when up, dashed and dim when down
+      const a = new THREE.Vector3(0, 0, 0), b = x.g.position.clone();
+      x.beam.geometry.setFromPoints([a, b]); x.beam.computeLineDistances();
+      x.beam.material.color.copy(c); x.beam.material.opacity = est ? .5 : .35;
+      x.beam.material.dashSize = est ? 1e3 : .6; x.beam.material.gapSize = est ? 0 : .5;
+      // shield segment
+      if (x.seg) {
+        tmpC.copy(c); x.seg.material.color.copy(tmpC); x.segW.material.color.copy(tmpC);
+        x.seg.material.opacity = est ? (.1 + x.hit * .35) * (lossy ? .8 + .2 * Math.sin(t * 4) : 1) : .06 + .06 * Math.sin(t * 9);
+        x.segW.material.opacity = est ? .35 : .5 * (Math.sin(t * 9) > 0 ? 1 : .2);
+        x.seg.visible = true;
+      }
+      // UPDATE traffic: particle count and speed from message rates (log)
+      for (const [pts, rate, inbound] of [[x.pIn, x.rateIn, true], [x.pOut, x.rateOut, false]]) {
+        const n = est ? Math.min(60, Math.round(3 + Math.log10(rate + 1) * 20)) : 0, sp = .15 + Math.min(1, Math.log10(rate + 1) / 3) * .8;
+        const pa = pts.geometry.attributes.position; pts.geometry.setDrawRange(0, n);
+        const side = inbound ? .3 : -.3, nx = -b.z, nz = b.x, nl = Math.hypot(nx, nz) || 1;
+        for (let i = 0; i < n; i++) {
+          let f = (x.phase[i] + t * sp) % 1; if (inbound) f = 1 - f;
+          pa.setXYZ(i, b.x * f + side * nx / nl, b.y * f, b.z * f + side * nz / nl);
+        }
+        pa.needsUpdate = true;
+      }
+    }
+    // shockwaves across the shield
+    for (let i = shock.length - 1; i >= 0; i--) {
+      const s = shock[i]; s.t += dt;
+      if (!s.m) { s.m = new THREE.Mesh(new THREE.TorusGeometry(SR * 1.01, .12, 6, 96), new THREE.MeshBasicMaterial({ color: s.bad ? 0xff4b4b : 0x3dffa0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); scene.add(s.m); }
+      const k = Math.min(1, s.t / 1.6);
+      s.m.rotation.set(Math.PI / 2 - k * Math.PI * .5, 0, 0); s.m.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), s.az);
+      s.m.scale.setScalar(1 + k * .25); s.m.material.opacity = 1 - k;
+      if (k >= 1) { scene.remove(s.m); s.m.geometry.dispose(); s.m.material.dispose(); shock.splice(i, 1); }
+    }
+  }
+
+  // hover / tap readout
+  const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(); let pinned = null;
+  function pick(ev) {
+    const r = R.domElement.getBoundingClientRect();
+    mouse.set((ev.clientX - r.left) / r.width * 2 - 1, -(ev.clientY - r.top) / r.height * 2 + 1);
+    ray.setFromCamera(mouse, cam);
+    const objs = []; for (const x of peers.values()) objs.push(x.node, x.col);
+    const h = ray.intersectObjects(objs, false)[0]; if (!h) return null;
+    for (const x of peers.values()) if (x.node === h.object || x.col === h.object) return x.ip;
+    return null;
+  }
+  function show(ip) {
+    const el = $('scan'), x = ip && peers.get(ip);
+    if (!x) { el.style.display = 'none'; return; }
+    const p = x.p, est = p.peerState === 'Established', h = BHIST[ip] || [];
+    const rows = [['STATE', `<span class="${est ? 'ok' : 'bad'}">${esc(p.peerState)}</span>`], ['REMOTE AS', `${esc(p.asn)} · ${String(p.asn) === localAs ? 'iBGP' : 'eBGP'}`],
+      [est ? 'UP' : 'DOWN', fmtUp(uptimeOf(p))], ['PREFIXES', `${(p.prefixReceived || 0).toLocaleString()} rcvd · ${(p.prefixAccepted || 0).toLocaleString()} accepted`],
+      ['PEAK', h.length ? `${x.peak.toLocaleString()} over ${h.length} polls` : '—'],
+      ['MESSAGES', `${(p.msgReceived || 0).toLocaleString()} in · ${(p.msgSent || 0).toLocaleString()} out`],
+      ['MSG RATE', `${x.rateIn.toFixed(2)} in · ${x.rateOut.toFixed(2)} out /s`],
+      ['QUEUES', p.inMsgQueue != null ? `${p.inMsgQueue} in · ${p.outMsgQueue} out` : '—']];
+    if (p.underMaintenance) rows.push(['MAINTENANCE', '<span class="warn">yes</span>']);
+    el.innerHTML = `<h3>${esc(ip)}</h3><div class="mini" style="margin-bottom:6px">${esc(p.description || '')}</div>` + rows.map(([a, b]) => `<div class="row"><span>${a}</span><span>${b}</span></div>`).join('');
+    el.style.display = 'block';
+  }
+  R.domElement.addEventListener('pointermove', ev => { if (ev.pointerType !== 'mouse') return; const k = pick(ev); if (!pinned) show(k); R.domElement.style.cursor = k ? 'pointer' : ''; });
+  let downAt = null;
+  R.domElement.addEventListener('pointerdown', ev => downAt = [ev.clientX, ev.clientY]);
+  R.domElement.addEventListener('pointerup', ev => { if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 6) return; pinned = pick(ev); show(pinned); });
+
+  function frameCamera() {
+    const a = cam.aspect || 1.6, d = Math.max(72, 88 / Math.min(1.5, a));
+    ctl.target.set(0, 1, 0); cam.position.set(0, d * .62, d * .78); ctl.update();
+  }
+  const clock = new THREE.Clock();
+  (function frame() {
+    const dt = Math.min(clock.getDelta(), .1);
+    if (R.domElement.style.display !== 'none') { animate(clock.elapsedTime, dt); ctl.update(); R.render(scene, cam); }
+    requestAnimationFrame(frame);
+  })();
+  function resize() { const r = host.getBoundingClientRect(); R.setSize(r.width, r.height, false); cam.aspect = r.width / Math.max(r.height, 1); cam.updateProjectionMatrix(); }
+  new ResizeObserver(resize).observe(host); resize(); frameCamera();
+  window.__bgp = { cam, ctl, peers };
+  return { update, canvas: R.domElement, summary: () => summary, frameCamera, clearScan: () => { pinned = null; } };
+})();
+/* =====================================================================================================
+   OSPF: this router at the centre, its adjacencies on rings, one ring per area (backbone level with the
+   router, other areas stepped below). Bearing follows the local interface's port order, as on the LLDP
+   radar, so the same neighbour sits on the same bearing in both views. The conduit to each neighbour is
+   green when FULL, amber in a transitional state, red when gone; a pulse runs along it while the
+   adjacency holds. The sleeve around the conduit is BFD (up = cyan, down = red, admin-down = none).
+   Beads orbiting a neighbour count its state changes (new ones since the page opened flash red);
+   retransmissions that rose since the last poll throw amber sparks back along the conduit.
+   The column over the router stacks its OSPF routes by type from the RIB summary.
+   ===================================================================================================== */
+const OHIST = {};   // neighbour key -> newest-first [{rt, sc}]
+const Ospf = (() => {
+  const host = $('main');
+  const R = new THREE.WebGLRenderer({ antialias: true });
+  R.setPixelRatio(Math.min(devicePixelRatio, 2)); R.setClearColor(0x02070b);
+  R.domElement.style.display = 'none'; host.prepend(R.domElement);
+  const scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0x02070b, .007);
+  const cam = new THREE.PerspectiveCamera(46, 1, .1, 400);
+  const ctl = new THREE.OrbitControls(cam, R.domElement);
+  ctl.enableDamping = true; ctl.dampingFactor = .08; ctl.enablePan = false; ctl.minDistance = 18; ctl.maxDistance = 140;
+  ctl.autoRotate = true; ctl.autoRotateSpeed = .25; ctl.addEventListener('start', () => ctl.autoRotate = false);
+  scene.add(new THREE.HemisphereLight(0x9fdcff, 0x0a1420, .8));
+  const kl = new THREE.DirectionalLight(0xffffff, .7); kl.position.set(-12, 30, 18); scene.add(kl);
+
+  const C_FULL = new THREE.Color(0x3dffa0), C_MID = new THREE.Color(0xffb340), C_BAD = new THREE.Color(0xff4b4b), C_BFD = new THREE.Color(0x56e0ff), C_WARN = new THREE.Color(0xffb340);
+  const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); const g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.25, 'rgba(255,255,255,.3)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+  function label(text, sub, color, px = 22) {
+    const c = document.createElement('canvas'), x = c.getContext('2d');
+    x.font = `600 ${px}px "Chakra Petch", sans-serif`; const w1 = x.measureText(text).width;
+    const lines = sub ? sub.split('\n') : [];
+    x.font = `${px * .74}px "Share Tech Mono", monospace`; const w2 = lines.length ? Math.max(...lines.map(l => x.measureText(l).width)) : 0;
+    c.width = Math.ceil(Math.max(w1, w2) + 12); c.height = Math.ceil(px * 1.35 + lines.length * px * .9);
+    x.font = `600 ${px}px "Chakra Petch", sans-serif`; x.fillStyle = color; x.textBaseline = 'top'; x.shadowColor = color; x.shadowBlur = 6; x.fillText(text, 6, 2);
+    x.shadowBlur = 0; x.font = `${px * .74}px "Share Tech Mono", monospace`; x.fillStyle = '#7fb3c2';
+    lines.forEach((l, i) => x.fillText(l, 6, px * 1.3 + i * px * .9));
+    const t = new THREE.CanvasTexture(c); t.minFilter = THREE.LinearFilter;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, depthTest: false }));
+    s.scale.set(c.width * .032, c.height * .032, 1); s.center.set(.5, 0); s.renderOrder = 6; return s;
+  }
+  const relabel = (spr, ...a) => { const n = label(...a); spr.material.map && spr.material.map.dispose(); spr.material.dispose(); spr.material = n.material; spr.scale.copy(n.scale); };
+
+  // ---- this router and its route column
+  const core = new THREE.Group(); scene.add(core);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 1.6, 6), new THREE.MeshStandardMaterial({ color: 0x0d2a36, emissive: 0x1a6f88, emissiveIntensity: .7, metalness: .6, roughness: .3, flatShading: true }));
+  core.add(hub);
+  core.add(new THREE.LineSegments(new THREE.EdgesGeometry(hub.geometry), new THREE.LineBasicMaterial({ color: 0x9ff0ff })));
+  const hubG = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x3dffa0, transparent: true, opacity: .4, depthWrite: false, blending: THREE.AdditiveBlending })); hubG.scale.set(11, 11, 1); core.add(hubG);
+  const routeCol = new THREE.Group(); routeCol.position.y = .8; core.add(routeCol);
+  const coreL = label('—', '', '#9ff0ff', 24); core.add(coreL); let coreText = '';
+  const RT = [['ospfIntraArea', 'intra', 0x3dffa0], ['ospfInterArea', 'inter', 0x56e0ff], ['ospfExternal1', 'ext1', 0xc49bff], ['ospfExternal2', 'ext2', 0xffb340], ['ospfNssaExternal1', 'nssa1', 0xff7ad9], ['ospfNssaExternal2', 'nssa2', 0xff9a6a]];
+  let rtSig = '';
+
+  // ---- areas and neighbours
+  const areas = new Map();   // areaId -> {ring, lbl, r, y}
+  const nbrs = new Map();    // key -> neighbour
+  const nKey = o => `${o.interfaceName}|${o.routerId}`;
+  let lastT = 0, lldpBy = {}, summary = '—';
+  function areaGeom(i) { return { r: 18 + i * 9, y: -i * 6 }; }
+  function ensureArea(id, i) {
+    let a = areas.get(id);
+    const g = areaGeom(i);
+    if (!a) {
+      const ring = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x2f7d93, transparent: true, opacity: .45 })); scene.add(ring);
+      const disc = new THREE.Mesh(new THREE.RingGeometry(1, 1.0001, 96), new THREE.MeshBasicMaterial({ color: 0x56e0ff, transparent: true, opacity: .03, side: THREE.DoubleSide, depthWrite: false })); disc.rotation.x = -Math.PI / 2; scene.add(disc);
+      const lbl = label(`AREA ${id}`, id === '0.0.0.0' || id === '0' ? 'backbone' : '', '#56e0ff', 20); scene.add(lbl);
+      a = { ring, disc, lbl }; areas.set(id, a);
+    }
+    if (a.r !== g.r || a.y !== g.y) {
+      a.r = g.r; a.y = g.y;
+      a.ring.geometry.setFromPoints(Array.from({ length: 129 }, (_, k) => new THREE.Vector3(g.r * Math.cos(k / 128 * Math.PI * 2), g.y, g.r * Math.sin(k / 128 * Math.PI * 2))));
+      a.disc.geometry.dispose(); a.disc.geometry = new THREE.RingGeometry(3, g.r + 3, 96); a.disc.position.y = g.y - .02;
+      a.lbl.position.set(-g.r - 3.5, g.y, 0);
+    }
+    return a;
+  }
+  function mkNbr(key) {
+    const g = new THREE.Group(); scene.add(g);
+    const node = new THREE.Mesh(new THREE.DodecahedronGeometry(1), new THREE.MeshStandardMaterial({ color: 0x3dffa0, emissive: 0x3dffa0, emissiveIntensity: .5, metalness: .3, roughness: .35, flatShading: true }));
+    g.add(node);
+    const wire = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.DodecahedronGeometry(1.45)), new THREE.LineBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: .6 })); g.add(wire);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x3dffa0, transparent: true, opacity: .25, depthWrite: false, blending: THREE.AdditiveBlending })); halo.scale.set(6, 6, 1); g.add(halo);
+    const beads = new THREE.Group(); g.add(beads);
+    const lb = label('', '', '#9ff0ff', 20); lb.position.y = 1.9; g.add(lb);
+    // conduit (tube rebuilt as the node moves), BFD sleeve, hello pulse
+    const conduit = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0x3dffa0, transparent: true, opacity: .55 })); scene.add(conduit);
+    const sleeve = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0x56e0ff, transparent: true, opacity: .14, depthWrite: false, side: THREE.DoubleSide })); scene.add(sleeve);
+    const pulse = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x9fffd0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); pulse.scale.set(1.6, 1.6, 1); scene.add(pulse);
+    node.userData.key = key;
+    return { key, g, node, wire, halo, beads, lb, conduit, sleeve, pulse, pos: new THREE.Vector3(), target: new THREE.Vector3(), o: {}, bearing: 0,
+             lastText: '', retransRate: 0, newChanges: 0, firstChanges: null, flash: 0, gone: 0, phase: Math.random(), lastBeads: -1, tubeAt: new THREE.Vector3(1e9, 0, 0) };
+  }
+  function disposeNbr(x) { for (const o of [x.g, x.conduit, x.sleeve, x.pulse]) { scene.remove(o); o.traverse(m => { m.geometry && m.geometry.dispose(); if (m.material) { m.material.map && m.material.map.dispose(); m.material.dispose(); } }); } }
+
+  function update(d) {
+    const list = []; for (const inst of Object.values(get(d, 'ospf.vrfs.default.instList', {}))) list.push(...(inst.ospfNeighborEntries || []));
+    const st = get(d, 'interfaces.interfaceStatuses', {});
+    lldpBy = {}; for (const n of get(d, 'lldp.lldpNeighbors', [])) lldpBy[n.port] = n.neighborDevice;
+    const t = get(d, 'meta.timestamp', Date.now() / 1000), dt = lastT && t > lastT ? t - lastT : 0; lastT = t;
+    // areas in order, backbone first
+    const ids = [...new Set(list.map(o => String(get(o, 'details.areaId', '0.0.0.0'))))].sort((a, b) => (b === '0.0.0.0') - (a === '0.0.0.0') || natural(a, b));
+    ids.forEach((id, i) => ensureArea(id, i));
+    for (const [id, a] of areas) if (!ids.includes(id)) { for (const o of [a.ring, a.disc, a.lbl]) { scene.remove(o); o.geometry && o.geometry.dispose(); o.material.dispose(); } areas.delete(id); }
+    // bearing by the local interface's place among interfaces with neighbours (same rule as the LLDP radar)
+    const ports = [...new Set([...get(d, 'lldp.lldpNeighbors', []).map(n => n.port), ...list.map(o => o.interfaceName)])].sort(natural);
+    const seen = new Set();
+    for (const o of list) {
+      const k = nKey(o); seen.add(k);
+      let x = nbrs.get(k); if (!x) { x = mkNbr(k); nbrs.set(k, x); x.flash = 1; }
+      if (x.gone) { x.gone = 0; x.flash = 1; }
+      const det = o.details || {}, prev = x.o.details || {};
+      if (dt && prev.retransmissionCount != null) x.retransRate = Math.max(0, ((det.retransmissionCount || 0) - (prev.retransmissionCount || 0)) / dt);
+      if (x.firstChanges == null) x.firstChanges = det.numberOfStateChanges || 0;
+      const nc = (det.numberOfStateChanges || 0) - x.firstChanges;
+      if (nc > x.newChanges) x.flash = 1;
+      x.newChanges = nc;
+      if (x.o.adjacencyState && x.o.adjacencyState !== o.adjacencyState) { x.flash = 1; ospfToast(`OSPF ${o.routerId} ${o.interfaceName} · ${String(o.adjacencyState).toUpperCase()}`, !/full/i.test(o.adjacencyState)); }
+      x.o = o;
+      const h = OHIST[k] = OHIST[k] || []; h.unshift({ rt: det.retransmissionCount || 0, sc: det.numberOfStateChanges || 0 }); if (h.length > HLEN) h.pop();
+      const ai = ids.indexOf(String(det.areaId || '0.0.0.0')), ag = areaGeom(Math.max(0, ai));
+      x.bearing = Math.max(0, ports.indexOf(o.interfaceName)) / Math.max(1, ports.length) * Math.PI * 2 - Math.PI / 2;
+      x.target.set(ag.r * Math.cos(x.bearing), ag.y + 1.2, ag.r * Math.sin(x.bearing));
+      if (x.pos.lengthSq() === 0) x.pos.copy(x.target).multiplyScalar(1.4);
+      const dev = shortName(lldpBy[o.interfaceName] || '');
+      const full = /full/i.test(o.adjacencyState);
+      const sub = `${o.routerId}\n${shortPort(o.interfaceName)} · ${String(o.adjacencyState).toUpperCase()}${o.drState && !/p2p/i.test(o.drState) ? ' · ' + o.drState : ''}`;
+      const txt = dev + sub + full;
+      if (txt !== x.lastText) { x.lastText = txt; relabel(x.lb, dev || o.routerId, sub, full ? '#9ff0ff' : '#ffb340', 20); }
+    }
+    for (const [k, x] of nbrs) if (!seen.has(k) && !x.gone) { x.gone = performance.now(); ospfToast(`OSPF ${x.o.routerId} ${x.o.interfaceName} · ADJACENCY LOST`, true); }
+    // route column
+    const rc = get(d, 'routes.vrfs.default.ospfCounts', {});
+    const rs = RT.map(([k]) => rc[k] || 0).join(',');
+    if (rs !== rtSig) {
+      rtSig = rs;
+      while (routeCol.children.length) { const m = routeCol.children.pop(); m.geometry.dispose(); m.material.dispose(); }
+      let y = 0; const total = RT.reduce((a, [k]) => a + (rc[k] || 0), 0);
+      for (const [k, , c] of RT) {
+        const v = rc[k] || 0; if (!v) continue;
+        const h = Math.max(.25, Math.log10(v + 1) * 1.6);
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(.9, .9, h, 18), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: .55, transparent: true, opacity: .85 }));
+        m.position.y = y + h / 2; routeCol.add(m); y += h + .12;
+      }
+      coreL.position.y = y + 1.4;
+      const parts = RT.filter(([k]) => rc[k]).map(([k, n]) => `${n} ${rc[k].toLocaleString()}`).join(' · ');
+      const ct = `${total.toLocaleString()} OSPF routes|${parts || 'no OSPF routes in the RIB summary'}`;
+      if (ct !== coreText) { coreText = ct; const [a, b] = ct.split('|'); relabel(coreL, a, b, '#9ff0ff', 24); }
+    }
+    const full = list.filter(o => /full/i.test(o.adjacencyState)).length, rising = [...nbrs.values()].filter(x => !x.gone && x.retransRate > 0).length;
+    summary = `${list.length} ADJACENCIES · ${full} FULL · ${ids.length} AREA${ids.length === 1 ? '' : 'S'}` + (rising ? ` · ${rising} RETRANSMITTING` : '');
+  }
+  function lost() { return [...nbrs.values()].filter(x => x.gone).length; }
+  function notFull() { return [...nbrs.values()].filter(x => !x.gone && !/full/i.test(x.o.adjacencyState || '') && !(/2.?way/i.test(x.o.adjacencyState || '') && /other/i.test(x.o.drState || ''))).length; }
+
+  let toastT = 0;
+  function ospfToast(t, bad) { const e = $('toast'); e.textContent = t; e.style.color = bad ? 'var(--bad)' : 'var(--ok)'; e.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => e.classList.remove('on'), 3500); }
+
+  // sparks for retransmissions
+  const SP = 300, spP = new Float32Array(SP * 3), spV = new Float32Array(SP * 3), spL = new Float32Array(SP);
+  const spG = new THREE.BufferGeometry(); spG.setAttribute('position', new THREE.BufferAttribute(spP, 3));
+  scene.add(new THREE.Points(spG, new THREE.PointsMaterial({ color: 0xffb340, size: .35, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })));
+  let spN = 0;
+  function spark(p, dir) { const i = spN = (spN + 1) % SP; spP.set([p.x, p.y, p.z], i * 3); spV.set([dir.x * 6 + (Math.random() - .5) * 2, 1 + Math.random() * 2, dir.z * 6 + (Math.random() - .5) * 2], i * 3); spL[i] = 1; }
+
+  const tmp = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
+  function animate(t, dt) {
+    hub.rotation.y += dt * .2;
+    hubG.material.opacity = .32 + .08 * Math.sin(t * 2);
+    for (const [k, x] of nbrs) {
+      const o = x.o, det = o.details || {}, full = /full/i.test(o.adjacencyState || '');
+      const now = performance.now();
+      const fade = x.gone ? Math.max(0, 1 - (now - x.gone) / 60000) : 1;
+      if (x.gone && fade <= 0) { disposeNbr(x); nbrs.delete(k); continue; }
+      x.pos.lerp(x.target, 1 - Math.exp(-dt * 2));
+      x.g.position.copy(x.pos).add(new THREE.Vector3(0, Math.sin(t * 1.2 + x.bearing * 3) * .2, 0));
+      x.wire.rotation.y += dt * .5; x.node.rotation.y -= dt * .3;
+      const unstable = x.retransRate > 0 || x.newChanges > 0;
+      const c = x.gone ? C_BAD : !full ? C_MID : unstable ? C_WARN : C_FULL;
+      x.node.material.color.copy(c); x.node.material.emissive.copy(c); x.halo.material.color.copy(c);
+      x.halo.material.opacity = (.22 + x.flash * .6) * (x.gone ? .5 + .5 * Math.sin(t * 8) : 1) * fade;
+      x.node.material.opacity = fade; x.node.material.transparent = fade < 1;
+      x.flash = Math.max(0, x.flash - dt * .6);
+      // conduit and BFD sleeve: rebuild the tube only when the node has moved
+      const a = new THREE.Vector3(0, .6, 0), b = x.g.position.clone();
+      if (b.distanceToSquared(x.tubeAt) > .01) {
+        x.tubeAt.copy(b);
+        const curve = new THREE.LineCurve3(a, b);
+        x.conduit.geometry.dispose(); x.conduit.geometry = new THREE.TubeGeometry(curve, 1, .12, 6, false);
+        x.sleeve.geometry.dispose(); x.sleeve.geometry = new THREE.TubeGeometry(curve, 1, .42, 10, false);
+      }
+      x.conduit.material.color.copy(c); x.conduit.material.opacity = (full ? .6 : .35 + .25 * Math.sin(t * 6)) * fade;
+      const bfd = String(det.bfdState || '').toLowerCase();
+      x.sleeve.visible = !!bfd && !/admin/.test(bfd);
+      x.sleeve.material.color.copy(/up/.test(bfd) ? C_BFD : C_BAD); x.sleeve.material.opacity = (/up/.test(bfd) ? .14 : .1 + .1 * Math.sin(t * 6)) * fade;
+      // hello pulse while the adjacency holds
+      x.pulse.visible = full && !x.gone;
+      if (x.pulse.visible) { const f = (t * .5 + x.phase) % 1; x.pulse.position.lerpVectors(a, b, f); x.pulse.material.opacity = Math.sin(f * Math.PI) * .9; x.pulse.material.color.copy(c); }
+      // state-change beads: one per change (cap 16); changes since the page opened are red
+      const total = Math.min(16, det.numberOfStateChanges || 0);
+      if (total !== x.lastBeads) {
+        x.lastBeads = total;
+        while (x.beads.children.length) { const m = x.beads.children.pop(); m.geometry.dispose(); m.material.dispose(); }
+        for (let i = 0; i < total; i++) { const m = new THREE.Mesh(new THREE.SphereGeometry(.13, 8, 6), new THREE.MeshBasicMaterial({ color: i >= total - x.newChanges ? 0xff4b4b : 0x7fb3c2 })); x.beads.add(m); }
+      }
+      x.beads.children.forEach((m, i, arr) => { const ang = i / Math.max(1, arr.length) * Math.PI * 2 + t * .6; m.position.set(Math.cos(ang) * 1.9, Math.sin(ang * 2) * .15, Math.sin(ang) * 1.9); });
+      // retransmissions: sparks thrown back toward this router, more for a higher rate
+      if (x.retransRate > 0 && !x.gone && Math.random() < dt * (3 + Math.min(20, x.retransRate * 4))) { const dir = a.clone().sub(b).setY(0).normalize(); spark(b, dir); }
+    }
+    for (let i = 0; i < SP; i++) {
+      if (spL[i] <= 0) { spP[i * 3 + 1] = -999; continue; }
+      spL[i] -= dt * .9; spV[i * 3 + 1] -= 5 * dt;
+      spP[i * 3] += spV[i * 3] * dt; spP[i * 3 + 1] += spV[i * 3 + 1] * dt; spP[i * 3 + 2] += spV[i * 3 + 2] * dt;
+    }
+    spG.attributes.position.needsUpdate = true;
+  }
+
+  // hover / tap readout
+  const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(); let pinned = null;
+  function pick(ev) {
+    const r = R.domElement.getBoundingClientRect();
+    mouse.set((ev.clientX - r.left) / r.width * 2 - 1, -(ev.clientY - r.top) / r.height * 2 + 1);
+    ray.setFromCamera(mouse, cam);
+    const h = ray.intersectObjects([...nbrs.values()].map(x => x.node), false)[0];
+    return h ? h.object.userData.key : null;
+  }
+  function show(k) {
+    const el = $('scan'), x = k && nbrs.get(k);
+    if (!x) { el.style.display = 'none'; return; }
+    const o = x.o, det = o.details || {}, h = OHIST[k] || [];
+    const rtDelta = h.length > 1 ? h[0].rt - h[h.length - 1].rt : 0;
+    const rows = [['STATE', `<span class="${/full/i.test(o.adjacencyState) ? 'ok' : 'warn'}">${esc(String(o.adjacencyState).toUpperCase())}</span>${x.gone ? ' <span class="bad">· LOST</span>' : ''}`],
+      ['ROUTER ID', esc(o.routerId)], ['INTERFACE', `${esc(o.interfaceName)} · ${esc(o.interfaceAddress || '')}`],
+      ['AREA', esc(det.areaId || '—')], ['DR STATE', `${esc(o.drState || '—')} · priority ${esc(o.priority ?? '—')}`],
+      ['BFD', esc(det.bfdState || '—')],
+      ['RETRANSMITS', `${(det.retransmissionCount || 0).toLocaleString()} total · ${h.length > 1 ? `+${rtDelta} over ${h.length} polls` : '—'}`],
+      ['STATE CHANGES', `${det.numberOfStateChanges ?? '—'} total · ${x.newChanges} since page opened`]];
+    const dev = lldpBy[o.interfaceName];
+    el.innerHTML = `<h3>${esc(shortName(dev || o.routerId).toUpperCase())}</h3><div class="mini" style="margin-bottom:6px">${esc(dev || 'no LLDP neighbour on this interface')}</div>` + rows.map(([a, b]) => `<div class="row"><span>${a}</span><span>${b}</span></div>`).join('');
+    el.style.display = 'block';
+  }
+  R.domElement.addEventListener('pointermove', ev => { if (ev.pointerType !== 'mouse') return; const k = pick(ev); if (!pinned) show(k); R.domElement.style.cursor = k ? 'pointer' : ''; });
+  let downAt = null;
+  R.domElement.addEventListener('pointerdown', ev => downAt = [ev.clientX, ev.clientY]);
+  R.domElement.addEventListener('pointerup', ev => { if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 6) return; pinned = pick(ev); show(pinned); });
+
+  function frameCamera() {
+    const n = Math.max(1, areas.size), a = cam.aspect || 1.6, d = Math.max(60, (60 + n * 14) / Math.min(1.5, a));
+    ctl.target.set(0, -(n - 1) * 3, 0); cam.position.set(0, d * .62, d * .8); ctl.update();
+  }
+  const clock = new THREE.Clock();
+  (function frame() {
+    const dt = Math.min(clock.getDelta(), .1);
+    if (R.domElement.style.display !== 'none') { animate(clock.elapsedTime, dt); ctl.update(); R.render(scene, cam); }
+    requestAnimationFrame(frame);
+  })();
+  function resize() { const r = host.getBoundingClientRect(); R.setSize(r.width, r.height, false); cam.aspect = r.width / Math.max(r.height, 1); cam.updateProjectionMatrix(); }
+  new ResizeObserver(resize).observe(host); resize(); frameCamera();
+  window.__ospf = { cam, ctl, nbrs };
+  return { update, canvas: R.domElement, summary: () => summary, frameCamera, clearScan: () => { pinned = null; }, lost, notFull };
+})();
+
+/* =====================================================================================================
+   SSH CONSOLE: xterm.js on the server's /ws/terminal proxy (same session as the telemetry; binary in and
+   out, JSON {cols, rows} for resize). Without a live session it runs a small demo shell that answers a few
+   show commands from the data on screen.
+   ===================================================================================================== */
+const Console = (() => {
+  const el = $('term3d');
+  let term = null, fit = null, ws = null, open = false, demoBuf = '';
+  const status = (txt, lamp) => { $('t-status').textContent = txt; $('t-lamp').className = 'lamp ' + (lamp || ''); };
+  const liveOK = () => served && sessionId && !demoOn;   // the demo shell answers only in demo mode
+  function ensure() {
+    if (term) return true;
+    if (!window.Terminal || !window.FitAddon) { status('xterm.js did not load', 'err'); return false; }
+    term = new window.Terminal({ cursorBlink: true, fontSize: 13.5, fontFamily: "'Share Tech Mono', ui-monospace, 'Courier New', monospace", scrollback: 5000,
+      theme: { background: '#02090d', foreground: '#bdf5ff', cursor: '#56e0ff', cursorAccent: '#02090d', selectionBackground: 'rgba(86,224,255,.28)',
+               black: '#0b1a20', red: '#ff5a4a', green: '#3dffa0', yellow: '#ffb340', blue: '#56a8ff', magenta: '#c49bff', cyan: '#56e0ff', white: '#d6f6ff',
+               brightBlack: '#4f7a88', brightRed: '#ff7a6a', brightGreen: '#7dffc0', brightYellow: '#ffd27a', brightBlue: '#8cc6ff', brightMagenta: '#dcc2ff', brightCyan: '#9ff0ff', brightWhite: '#ffffff' } });
+    fit = new window.FitAddon.FitAddon(); term.loadAddon(fit); term.open($('t-body'));
+    term.onData(d => { if (demoOn) demoInput(d); else if (ws && ws.readyState === 1) ws.send(d); });
+    new ResizeObserver(() => { if (!open) return; try { fit.fit(); } catch (e) {} dims(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cols: term.cols, rows: term.rows })); }).observe($('t-body'));
+    return true;
+  }
+  const dims = () => { $('t-dims').textContent = term ? `${term.cols}×${term.rows}` : '—'; };
+  function connect() {
+    if (ws) { ws.onclose = null; try { ws.close(); } catch (e) {} ws = null; }
+    if (demoOn) { startDemo(); return; }
+    if (!liveOK()) { $('t-mode').textContent = 'NO SESSION'; status('NO SESSION', 'err'); term.write('\x1b[33mNo device session. Use CONNECT in the header first.\x1b[0m\r\n'); return; }
+    $('t-mode').textContent = 'LIVE · /ws/terminal'; status('CONNECTING…', 'wait');
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/terminal?session=${encodeURIComponent(sessionId)}`);
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => { status('CONNECTED', 'on'); ws.send(JSON.stringify({ cols: term.cols, rows: term.rows })); };
+    ws.onmessage = e => term.write(e.data instanceof ArrayBuffer ? new Uint8Array(e.data) : e.data);
+    ws.onclose = () => status('DISCONNECTED · reconnect to open a new session', 'err');
+    ws.onerror = () => status('CONNECTION ERROR', 'err');
+  }
+  async function show() {
+    try { if (document.fonts && document.fonts.load) { await document.fonts.load("13.5px 'Share Tech Mono'"); } } catch (e) {}   // xterm measures the cell size once, at open
+    if (!ensure()) return;
+    open = true; el.classList.add('on'); document.body.classList.add('term-open');
+    $('t-title').textContent = `SSH · ${D ? devName(D) : ''}`;
+    setTimeout(() => { try { fit.fit(); } catch (e) {} dims(); term.focus(); }, 60);
+    if (!ws && !demoStarted) connect();
+  }
+  function hide() { open = false; el.classList.remove('on'); document.body.classList.remove('term-open'); }
+
+  // ---- demo shell: a few show commands answered from the data on screen
+  let demoStarted = false;
+  const host = () => (D ? (get(D, 'version.hostname', '') || shortName(get(D, 'meta.hostname', 'switch'))) : 'switch');
+  const prompt = () => term.write(`\r\n\x1b[96m${host()}\x1b[0m>`);
+  function startDemo() {
+    demoStarted = true; $('t-mode').textContent = 'DEMO SHELL · sample data'; status('DEMO', 'wait');
+    term.write('\x1b[33mDemo mode: this shell answers from the sample data on screen, not a device.\x1b[0m\r\n');
+    term.write('Try: show version · show lldp neighbors · show ip bgp summary · show ip ospf neighbor\r\n     show interfaces status · show interfaces counters rates · show system environment temperature');
+    prompt();
+  }
+  function demoInput(d) {
+    for (const ch of d) {
+      if (ch === '\r') { term.write('\r\n'); run(demoBuf.trim()); demoBuf = ''; prompt(); }
+      else if (ch === '\x7f' || ch === '\b') { if (demoBuf) { demoBuf = demoBuf.slice(0, -1); term.write('\b \b'); } }
+      else if (ch === '\x03') { term.write('^C'); demoBuf = ''; prompt(); }
+      else if (ch >= ' ' && ch !== '\x7f') { demoBuf += ch; term.write(ch); }
+    }
+  }
+  const pad = (v, n) => String(v ?? '').padEnd(n).slice(0, n);
+  const lpad = (v, n) => String(v ?? '').padStart(n);
+  const CMDS = [
+    ['show version', () => { const v = D.version || {}; return [`Arista ${v.modelName || ''}`, `Serial number: ${v.serialNumber || '—'}`, `Software image version: ${v.version || '—'}`, `Uptime: ${fmtUp(v.uptime || 0)}`, `Total memory: ${v.memTotal || '—'} kB`, `Free memory: ${v.memFree || '—'} kB`]; }],
+    ['show lldp neighbors', () => ['Port          Neighbor Device ID                    Neighbor Port ID    TTL', '------------- ------------------------------------- ------------------- ---', ...get(D, 'lldp.lldpNeighbors', []).map(n => `${pad(shortPort(n.port), 13)} ${pad(n.neighborDevice, 37)} ${pad(n.neighborPort, 19)} ${n.ttl ?? ''}`)]],
+    ['show ip bgp summary', () => { const v = get(D, 'bgp.vrfs.default', {}); return [`BGP summary information for VRF default`, `Router identifier ${v.routerId || '—'}, local AS number ${v.asn || '—'}`, `  Neighbor         V  AS           MsgRcvd   MsgSent  InQ OutQ  Up/Down State   PfxRcd PfxAcc`,
+      ...Object.entries(v.peers || {}).map(([ip, p]) => `  ${pad(ip, 16)} 4  ${pad(p.asn, 12)} ${lpad(p.msgReceived ?? '', 9)} ${lpad(p.msgSent ?? '', 9)} ${lpad(p.inMsgQueue ?? 0, 4)} ${lpad(p.outMsgQueue ?? 0, 4)} ${lpad(fmtUp(+p.upDownTime > 1e9 ? Date.now() / 1000 - p.upDownTime : p.upDownTime), 8)} ${pad(p.peerState === 'Established' ? 'Estab' : p.peerState, 7)} ${lpad(p.peerState === 'Established' ? p.prefixReceived : '', 6)} ${lpad(p.peerState === 'Established' ? p.prefixAccepted : '', 6)}`)]; }],
+    ['show ip ospf neighbor', () => { const l = []; for (const i of Object.values(get(D, 'ospf.vrfs.default.instList', {}))) l.push(...(i.ospfNeighborEntries || []));
+      return ['Neighbor ID     Pri State            Address         Interface', ...l.map(o => `${pad(o.routerId, 15)} ${lpad(o.priority ?? '', 3)} ${pad(`${String(o.adjacencyState).toUpperCase()}/${o.drState || ''}`, 16)} ${pad(o.interfaceAddress, 15)} ${o.interfaceName}`)]; }],
+    ['show interfaces status', () => { const st = get(D, 'interfaces.interfaceStatuses', {}); return ['Port       Name                       Status       Speed  Type', ...Object.keys(st).sort(natural).map(p => `${pad(shortPort(p), 10)} ${pad(st[p].description, 26)} ${pad(st[p].linkStatus, 12)} ${pad(fmtSpeed(st[p].bandwidth), 6)} ${st[p].interfaceType || ''}`)]; }],
+    ['show interfaces counters rates', () => { const st = get(D, 'interfaces.interfaceStatuses', {}); return ['Port       Name                         In Mbps   %   Out Mbps   %', ...Object.keys(st).sort(natural).filter(p => RATES[p]).map(p => { const r = RATES[p], bw = st[p].bandwidth || 1; return `${pad(shortPort(p), 10)} ${pad(st[p].description, 26)} ${lpad((r.in / 1e6).toFixed(1), 9)} ${lpad((r.in / bw * 100).toFixed(1), 5)} ${lpad((r.out / 1e6).toFixed(1), 9)} ${lpad((r.out / bw * 100).toFixed(1), 5)}`; })]; }],
+    ['show system environment temperature', () => ['Sensor  Description                       Temp    Setpoint  Alert  Critical', ...get(D, 'environment.sensors', []).map(sn => `${lpad(sn.id, 6)}  ${pad(sn.description, 32)} ${lpad(sn.temp.toFixed(1), 6)}C ${lpad(sn.setpoint, 8)}C ${lpad(sn.alert_limit ?? '', 5)}C ${lpad(sn.critical_limit ?? '', 7)}C`)]],
+  ];
+  function run(line) {
+    if (!line) return;
+    if (/^(exit|quit|logout)$/i.test(line)) { hide(); return; }
+    if (/^(\?|help)$/i.test(line)) { term.write(CMDS.map(c => '  ' + c[0]).join('\r\n')); return; }
+    const w = line.toLowerCase().split(/\s+/);
+    const hit = CMDS.filter(([c]) => { const cw = c.split(' '); return w.length === cw.length && w.every((x, i) => cw[i].startsWith(x)); });
+    if (hit.length !== 1 || !D) { term.write(hit.length > 1 ? '% Ambiguous command' : '% Invalid input'); return; }
+    term.write(hit[0][1]().join('\r\n'));
+  }
+
+  // ---- drag by the title bar, resize from the grip
+  function place() { if (el.classList.contains('placed')) return; const r = el.getBoundingClientRect(); el.classList.add('placed'); el.style.left = r.left + 'px'; el.style.top = r.top + 'px'; el.style.animation = 'none'; }
+  function drag(handle, fn) {
+    handle.addEventListener('pointerdown', e => {
+      if (e.target.closest('button')) return;
+      place(); const r = el.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY;
+      handle.setPointerCapture(e.pointerId);
+      const mv = ev => fn(r, ev.clientX - x0, ev.clientY - y0);
+      const up = () => { handle.removeEventListener('pointermove', mv); handle.removeEventListener('pointerup', up); };
+      handle.addEventListener('pointermove', mv); handle.addEventListener('pointerup', up);
+    });
+  }
+  drag($('t-bar'), (r, dx, dy) => { el.style.left = Math.max(0, Math.min(innerWidth - 120, r.left + dx)) + 'px'; el.style.top = Math.max(0, Math.min(innerHeight - 60, r.top + dy)) + 'px'; });
+  drag($('t-grip'), (r, dx, dy) => { el.style.width = Math.max(420, r.width + dx) + 'px'; el.style.height = Math.max(260, r.height + dy) + 'px'; });
+  $('t-close').onclick = hide;
+  $('t-reconnect').onclick = () => { if (!term) return; term.reset(); demoStarted = false; connect(); };
+  $('term-btn').onclick = () => (open ? hide() : show());
+  return { show, hide };
+})();
+
+/* ---------- main viewscreen: LLDP radar, interface utilization, environment, BGP or OSPF ---------- */
+const VIEWS = { lldp: () => Radar, util: () => Util, therm: () => Therm, bgp: () => Bgp, ospf: () => Ospf };
+let view = 'lldp';
+function setView(v) {
+  view = v;
+  for (const [k, m] of Object.entries(VIEWS)) { m().canvas.style.display = k === v ? '' : 'none'; $('lg-' + k).style.display = k === v ? '' : 'none'; m().clearScan(); }
+  document.querySelectorAll('.tabs button[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  document.querySelector('[data-st=drive]').classList.toggle('sel', v === 'util');
+  document.querySelector('[data-st=eng]').classList.toggle('sel', v === 'therm');
+  document.querySelector('[data-st=shields]').classList.toggle('sel', v === 'bgp');
+  $('scan').style.display = 'none';
+  if (v === 'util') Util.frameCamera();
+  if (v === 'therm') Therm.frameCamera();
+  if (v === 'bgp') Bgp.frameCamera();
+  if (v === 'ospf') Ospf.frameCamera();
+  document.body.classList.toggle('v-therm', v === 'therm');
+  if (v !== 'therm') setDetail(false);
+  if (D) renderAll();
+}
+document.querySelectorAll('.tabs button[data-v]').forEach(b => b.onclick = e => { e.stopPropagation(); setView(b.dataset.v); });
+let detailOn = false;
+function setDetail(on) { detailOn = on; $('tdetail').classList.toggle('on', on); $('detail-btn').classList.toggle('on', on); $('detail-btn').textContent = on ? 'Detail ▴' : 'Detail ▾'; if (on && D) renderDetail(D); }
+$('detail-btn').onclick = e => { e.stopPropagation(); setDetail(!detailOn); };
+
+/* ---------- environment detail: every sensor, grouped as the 3D view places them ---------- */
+const GROUP_NAME = { chip: 'Switch chip', cpu: 'CPU', psu: 'Power supplies', front: 'Front / inlet', rear: 'Rear / outlet', board: 'Board' };
+function sensorGroup(sn) {
+  const d = (sn.description || '').toLowerCase();
+  if (sn.psu || /psu|power ?supply|pwr/.test(d)) return 'psu';
+  if (/cpu/.test(d)) return 'cpu';
+  if (/stat|fe\d|fap|jericho|ramon|chip|asic|switch|fabric|tomahawk|trident|sand/.test(d)) return 'chip';
+  if (/front|inlet|intake|ambient/.test(d)) return 'front';
+  if (/rear|outlet|exhaust|back/.test(d)) return 'rear';
+  return 'board';
+}
+function spark(h, lo, hi) {   // newest-first history -> small svg line, oldest on the left
+  if (!h || h.length < 2) return '<svg width="96" height="22"></svg>';
+  const v = h.slice().reverse(), w = 96, ht = 22, span = Math.max(.5, hi - lo);
+  const pts = v.map((t, i) => `${(i / (v.length - 1) * (w - 2) + 1).toFixed(1)},${(ht - 2 - (t - lo) / span * (ht - 4)).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${ht}"><polyline points="${pts}" fill="none" stroke="#56e0ff" stroke-width="1.4"/></svg>`;
+}
+function renderDetail(d) {
+  const env = d.environment || {}, S = env.sensors || [];
+  const groups = {};
+  for (const sn of S) (groups[sensorGroup(sn)] = groups[sensorGroup(sn)] || []).push(sn);
+  let h = `<div class="trow thead"><span>SENSOR</span><span class="t">TEMP</span><span>0°C → CRITICAL · ticks: setpoint · alert · critical</span><span class="hd">HEADROOM</span><span>LAST ${HLEN} POLLS</span></div>`;
+  for (const g of ['chip', 'cpu', 'board', 'front', 'rear', 'psu']) {
+    const list = (groups[g] || []).slice().sort((a, b) => b.temp / (b.setpoint || 99) - a.temp / (a.setpoint || 99));
+    if (!list.length) continue;
+    const hot = list[0];
+    h += `<h4>${GROUP_NAME[g]}<small>${list.length} sensor${list.length > 1 ? 's' : ''} · hottest ${esc(hot.description)} ${hot.temp.toFixed(1)}°C</small></h4>`;
+    for (const sn of list) {
+      const crit = sn.critical_limit || (sn.setpoint || 80) * 1.25, al = sn.alert_limit || (sn.setpoint || 80) + 5, sp = sn.setpoint || 0;
+      const pc = v => Math.max(0, Math.min(100, v / crit * 100));
+      const col = sn.temp >= al ? 'var(--bad)' : sn.temp >= sp ? 'var(--warn)' : sn.temp / (sp || 99) > .85 ? '#3dffa0' : 'var(--pri)';
+      const hist = THIST[`${sn.id}:${sn.description}`] || [];
+      const lo = hist.length ? Math.min(...hist) - .5 : sn.temp - 1, hi = hist.length ? Math.max(...hist) + .5 : sn.temp + 1;
+      const trend = hist.length > 1 ? hist[0] - hist[hist.length - 1] : 0;
+      const head = sn.temp >= sp ? `<span class="warn">+${(sn.temp - sp).toFixed(1)}° over set</span> · ${(al - sn.temp).toFixed(1)}° to alert` : `${(sp - sn.temp).toFixed(1)}° to setpoint`;
+      h += `<div class="trow"><span class="nm" title="sensor ${esc(sn.id)}">${esc(sn.description)}</span><span class="t" style="color:${col}">${sn.temp.toFixed(1)}°C</span>` +
+        `<span class="tbar" title="setpoint ${sp}°C · alert ${al}°C · critical ${crit}°C"><i style="width:${pc(sn.temp)}%;background:${col}"></i>` +
+        `<b style="left:${pc(sp)}%;background:#ffb340"></b><b style="left:${pc(al)}%;background:#ff7a3a"></b><b style="left:calc(${pc(crit)}% - 2px);background:#ff4b4b"></b></span>` +
+        `<span class="hd">${head}</span><span title="${hist.length > 1 ? (trend >= 0 ? '+' : '') + trend.toFixed(1) + '° over ' + hist.length + ' polls' : ''}">${spark(hist, lo, hi)}</span></div>`;
+    }
+  }
+  const fans = env.fans || [], psus = env.power_supplies || [];
+  if (fans.length) h += `<h4>Fans<small>cooling ${esc(env.cooling_status || '—')} · airflow ${esc(String(env.airflow || '—').replace(/([a-z])([A-Z])/g, '$1 $2'))}</small></h4>` + fans.map(f => `<div class="trow"><span class="nm">Fan ${esc(f.id)}</span><span class="t ${/ok/i.test(f.status) ? 'ok' : 'bad'}">${f.actual_speed}%</span><span class="tbar"><i style="width:${f.actual_speed}%;background:var(--pri)"></i></span><span class="hd">${esc(f.status)} · set ${f.config_speed}%</span><span class="hd">${esc(f.stability || '')}</span></div>`).join('');
+  if (psus.length) h += `<h4>PSUs</h4>` + psus.map(p => `<div class="trow"><span class="nm">PSU${esc(p.id)} ${esc(p.model || '')}</span><span class="t ${/ok/i.test(p.status) ? 'ok' : 'bad'}">${Math.round(p.output_watts)}W</span><span class="tbar"><i style="width:${Math.min(100, p.output_watts / (p.capacity_w || 1) * 100)}%;background:var(--warn)"></i></span><span class="hd">${esc(p.status)} · of ${p.capacity_w}W</span><span class="hd">${p.input_amps ?? '—'}A in</span></div>`).join('');
+  const el = $('tdetail'), y = el.scrollTop; el.innerHTML = h; el.scrollTop = y;   // keep the reader's place across polls
+}
+</script>
+</body>
+</html>
