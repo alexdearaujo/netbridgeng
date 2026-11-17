@@ -1,0 +1,18 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/22.4R3/junos">
+<route-engine-information xmlns="http://xml.juniper.net/junos/22.4R3/junos-chassis">
+    <route-engine>
+        <slot>0</slot><mastership-state>master</mastership-state><mastership-priority>Master (default)</mastership-priority>
+        <memory-dram-size>65536 MB</memory-dram-size><memory-buffer-utilization>31</memory-buffer-utilization>
+        <cpu-user>7</cpu-user><cpu-background>0</cpu-background><cpu-system>4</cpu-system><cpu-interrupt>1</cpu-interrupt><cpu-idle>88</cpu-idle>
+        <model>RE-S-X6-64G</model>
+        <up-time junos:seconds="16172971">187 days, 4 hours, 12 minutes, 51 seconds</up-time>
+    </route-engine>
+    <route-engine>
+        <slot>1</slot><mastership-state>backup</mastership-state><cpu-idle>99</cpu-idle><memory-dram-size>65536 MB</memory-dram-size>
+        <up-time junos:seconds="16172742">187 days, 4 hours, 9 minutes, 2 seconds</up-time>
+    </route-engine>
+</route-engine-information>
+    <cli>
+        <banner>{master}</banner>
+    </cli>
+</rpc-reply>

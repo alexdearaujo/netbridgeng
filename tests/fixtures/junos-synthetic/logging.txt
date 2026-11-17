@@ -1,0 +1,6 @@
+
+Nov 16 08:01:12  qfx-lab-01 mgd[51234]: UI_CMDLINE_READ_LINE: User 'scott', command 'show bgp summary '
+Nov 16 08:03:45  qfx-lab-01 rpd[2210]: BGP_IO_ERROR_CLOSE_SESSION: BGP peer 10.10.0.2 (External AS 65020): Error event Operation timed out(60) for I/O session - closing it
+Nov 16 08:03:45  qfx-lab-01 rpd[2210]: bgp_io_mgmt_cb:2779: NOTIFICATION sent to 10.10.0.2 (External AS 65020): code 4 (Hold Timer Expired Error), Reason: holdtime expired for 10.10.0.2 (External AS 65020)
+Nov  6 08:10:00  qfx-lab-01 chassisd[1999]: CHASSISD_FAN_SPEED_CHANGE: Fan Tray 2 Fan 0 speed changed to high
+Nov 16 08:12:30.123  qfx-lab-01 /kernel: KERN_ARP_ADDR_CHANGE: arp info overwritten for 10.0.0.9 from aa:bb:cc:00:00:01 to aa:bb:cc:00:00:02

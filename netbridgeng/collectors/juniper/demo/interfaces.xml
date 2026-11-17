@@ -1,0 +1,321 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/22.4R3/junos">
+<interface-information xmlns="http://xml.juniper.net/junos/22.4R3/junos-interface" junos:style="normal">
+    <physical-interface>
+        <name>et-0/0/0</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>TRANSIT: Transit-A AS64500</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>100Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>4100000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>1200000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>et-0/0/0.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>et-0/0/1</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>TRANSIT: Transit-B AS64501</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>100Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>3200000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>900000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>et-0/0/1.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>et-0/0/2</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>CORE: core-01.dc1 et-0/0/4</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>100Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>2800000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>5100000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>et-0/0/2.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>et-0/0/3</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>CORE: core-02.dc1 et-0/0/4</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>100Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>2600000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>4900000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>et-0/0/3.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>et-1/0/0</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>IX: Example-IX peering LAN</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>100Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>1900000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>700000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>et-1/0/0.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>et-1/0/1</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>AGG: agg-01.dc1 et-0/0/48</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>100Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>800000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>1400000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>et-1/0/1.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>xe-2/0/0</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>CUST: Customer-A AS64510</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>10Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>210000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>60000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>xe-2/0/0.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>xe-2/0/1</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>CUST: Customer-B AS64511</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>10Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>140000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>50000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>xe-2/0/1.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>xe-2/0/2</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>CUST: Customer-C (static)</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>10Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>60000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>20000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>xe-2/0/2.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>xe-2/0/3</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>AGG: agg-02.dc1 xe-0/0/47</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>10Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>90000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>120000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>xe-2/0/3.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>xe-2/0/4</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>MON: flow-collector-01</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>10Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>10000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>240000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>xe-2/0/4.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>xe-2/0/5</name>
+        <admin-status junos:format="Disabled">down</admin-status>
+        <oper-status>down</oper-status>
+        <description>spare</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>10Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>0</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>0</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>xe-2/0/5.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>xe-2/0/6</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>down</oper-status>
+        
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>10Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>0</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>0</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>xe-2/0/6.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>xe-2/0/7</name>
+        <admin-status junos:format="Disabled">down</admin-status>
+        <oper-status>down</oper-status>
+        <description>reserved: Customer-D turn-up</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>10Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>0</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>0</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>xe-2/0/7.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>ae0</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>CORE: LAG to core-01/02</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>200Gbps</speed>
+        <if-media-type>Fiber</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>5400000000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>10000000000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>ae0.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface>
+        <name>fxp0</name>
+        <admin-status junos:format="Enabled">up</admin-status>
+        <oper-status>up</oper-status>
+        <description>MGMT: oob-sw-01</description>
+        <link-level-type>Ethernet</link-level-type>
+        <mtu>9192</mtu>
+        <speed>1000mbps</speed>
+        <if-media-type>Copper</if-media-type>
+        <traffic-statistics junos:style="verbose">
+            <input-bytes>21000000000</input-bytes>
+            <input-bps>0</input-bps>
+            <output-bytes>44000000000</output-bytes>
+            <output-bps>0</output-bps>
+        </traffic-statistics>
+        <input-error-list><input-errors>0</input-errors><input-drops>0</input-drops><framing-errors>0</framing-errors></input-error-list>
+        <output-error-list><carrier-transitions>2</carrier-transitions><output-errors>0</output-errors><output-drops>0</output-drops></output-error-list>
+        <logical-interface><name>fxp0.0</name></logical-interface>
+    </physical-interface>
+    <physical-interface><name>lo0</name><admin-status>up</admin-status><oper-status>up</oper-status><speed>Unlimited</speed></physical-interface>
+    <physical-interface><name>irb</name><admin-status>up</admin-status><oper-status>up</oper-status><speed>Unlimited</speed></physical-interface>
+    <physical-interface><name>pfe-0/0/0</name><admin-status>up</admin-status><oper-status>up</oper-status><speed>Unlimited</speed></physical-interface>
+    <physical-interface><name>pfh-0/0/0</name><admin-status>up</admin-status><oper-status>up</oper-status><speed>Unlimited</speed></physical-interface>
+    <physical-interface><name>gr-0/0/10</name><admin-status>up</admin-status><oper-status>up</oper-status><speed>Unlimited</speed></physical-interface>
+    <physical-interface><name>lsi</name><admin-status>up</admin-status><oper-status>up</oper-status><speed>Unlimited</speed></physical-interface>
+    <physical-interface><name>dsc</name><admin-status>up</admin-status><oper-status>up</oper-status><speed>Unlimited</speed></physical-interface>
+    <physical-interface><name>tap</name><admin-status>up</admin-status><oper-status>up</oper-status><speed>Unlimited</speed></physical-interface>
+    <physical-interface><name>mtun</name><admin-status>up</admin-status><oper-status>up</oper-status><speed>Unlimited</speed></physical-interface>
+    <physical-interface><name>pip0</name><admin-status>up</admin-status><oper-status>up</oper-status><speed>Unlimited</speed></physical-interface>
+</interface-information>
+    <cli>
+        <banner>{master}</banner>
+    </cli>
+</rpc-reply>

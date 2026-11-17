@@ -1,0 +1,152 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/22.4R3/junos">
+<bgp-information xmlns="http://xml.juniper.net/junos/22.4R3/junos-routing">
+    <group-count>5</group-count><peer-count>12</peer-count><down-peer-count>0</down-peer-count>
+    <bgp-peer junos:style="terse">
+        <peer-address>203.0.113.1</peer-address>
+        <peer-as>64500</peer-as>
+        <input-messages>1200000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="3546000">5w6d 1:00:00</elapsed-time>
+        <description>TRANSIT-A</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet.0</name><active-prefix-count>456590</active-prefix-count><received-prefix-count>951233</received-prefix-count><accepted-prefix-count>951230</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+    <bgp-peer junos:style="terse">
+        <peer-address>2001:db8:100::1</peer-address>
+        <peer-as>64500</peer-as>
+        <input-messages>1200000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="3545900">5w6d 0:58:20</elapsed-time>
+        <description>TRANSIT-A-V6</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet6.0</name><active-prefix-count>101779</active-prefix-count><received-prefix-count>212045</received-prefix-count><accepted-prefix-count>212040</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+    <bgp-peer junos:style="terse">
+        <peer-address>198.51.100.9</peer-address>
+        <peer-as>64501</peer-as>
+        <input-messages>1200000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="1468800">2w3d 0:00:00</elapsed-time>
+        <description>TRANSIT-B</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet.0</name><active-prefix-count>456413</active-prefix-count><received-prefix-count>950870</received-prefix-count><accepted-prefix-count>950862</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+    <bgp-peer junos:style="terse">
+        <peer-address>2001:db8:200::9</peer-address>
+        <peer-as>64501</peer-as>
+        <input-messages>1200000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="1468800">2w3d 0:00:00</elapsed-time>
+        <description>TRANSIT-B-V6</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet6.0</name><active-prefix-count>101749</active-prefix-count><received-prefix-count>211980</received-prefix-count><accepted-prefix-count>211979</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+    <bgp-peer junos:style="terse">
+        <peer-address>192.0.2.21</peer-address>
+        <peer-as>64505</peer-as>
+        <input-messages>90000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="518400">0w6d 0:00:00</elapsed-time>
+        <description>IX: Example-CDN</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet.0</name><active-prefix-count>1497</active-prefix-count><received-prefix-count>3120</received-prefix-count><accepted-prefix-count>3120</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+    <bgp-peer junos:style="terse">
+        <peer-address>192.0.2.22</peer-address>
+        <peer-as>64506</peer-as>
+        <input-messages>90000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="2505600">4w1d 0:00:00</elapsed-time>
+        <description>IX: Example-Cloud</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet.0</name><active-prefix-count>4036</active-prefix-count><received-prefix-count>8412</received-prefix-count><accepted-prefix-count>8410</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+    <bgp-peer junos:style="terse">
+        <peer-address>192.0.2.23</peer-address>
+        <peer-as>64507</peer-as>
+        <input-messages>90000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="172800">0w2d 0:00:00</elapsed-time>
+        <description>IX: Example-ISP</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet.0</name><active-prefix-count>309</active-prefix-count><received-prefix-count>645</received-prefix-count><accepted-prefix-count>645</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+    <bgp-peer junos:style="terse">
+        <peer-address>192.0.2.1</peer-address>
+        <peer-as>64508</peer-as>
+        <input-messages>90000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="7603200">12w4d 0:00:00</elapsed-time>
+        <description>IX: route-server-1</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet.0</name><active-prefix-count>29328</active-prefix-count><received-prefix-count>61230</received-prefix-count><accepted-prefix-count>61101</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+    <bgp-peer junos:style="terse">
+        <peer-address>10.255.0.1</peer-address>
+        <peer-as>65020</peer-as>
+        <input-messages>90000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="10368000">17w1d 0:00:00</elapsed-time>
+        <description>iBGP core-01</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet.0</name><active-prefix-count>902</active-prefix-count><received-prefix-count>1880</received-prefix-count><accepted-prefix-count>1880</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+    <bgp-peer junos:style="terse">
+        <peer-address>10.255.0.2</peer-address>
+        <peer-as>65020</peer-as>
+        <input-messages>90000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="10368000">17w1d 0:00:00</elapsed-time>
+        <description>iBGP core-02</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet.0</name><active-prefix-count>902</active-prefix-count><received-prefix-count>1880</received-prefix-count><accepted-prefix-count>1880</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+    <bgp-peer junos:style="terse">
+        <peer-address>198.51.100.30</peer-address>
+        <peer-as>64510</peer-as>
+        <input-messages>90000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="777600">1w2d 0:00:00</elapsed-time>
+        <description>CUST: Customer-A</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet.0</name><active-prefix-count>5</active-prefix-count><received-prefix-count>12</received-prefix-count><accepted-prefix-count>12</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+    <bgp-peer junos:style="terse">
+        <peer-address>198.51.100.34</peer-address>
+        <peer-as>64511</peer-as>
+        <input-messages>90000</input-messages>
+        <output-messages>40000</output-messages>
+        <route-queue-count>0</route-queue-count>
+        <flap-count>1</flap-count>
+        <elapsed-time junos:seconds="4492800">7w3d 0:00:00</elapsed-time>
+        <description>CUST: Customer-B</description>
+        <peer-state junos:format="Establ">Established</peer-state>
+        <bgp-rib junos:style="terse"><name>inet.0</name><active-prefix-count>1</active-prefix-count><received-prefix-count>3</received-prefix-count><accepted-prefix-count>3</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+    </bgp-peer>
+</bgp-information>
+    <cli>
+        <banner>{master}</banner>
+    </cli>
+</rpc-reply>

@@ -1,0 +1,11 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/22.4R3/junos">
+<software-information>
+    <host-name>edge-01</host-name>
+    <product-model>mx960</product-model>
+    <product-name>mx960</product-name>
+    <junos-version>22.4R3-S2.11</junos-version>
+</software-information>
+    <cli>
+        <banner>{master}</banner>
+    </cli>
+</rpc-reply>

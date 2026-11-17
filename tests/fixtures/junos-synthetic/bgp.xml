@@ -1,0 +1,42 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/21.4R3/junos">
+    <bgp-information xmlns="http://xml.juniper.net/junos/21.4R3/junos-routing">
+        <bgp-thread-mode>BGP I/O</bgp-thread-mode>
+        <group-count>2</group-count>
+        <peer-count>3</peer-count>
+        <down-peer-count>1</down-peer-count>
+        <bgp-rib junos:style="brief"><name>inet.0</name><total-prefix-count>950123</total-prefix-count><received-prefix-count>950123</received-prefix-count><accepted-prefix-count>950100</accepted-prefix-count><active-prefix-count>930000</active-prefix-count></bgp-rib>
+        <bgp-peer junos:style="terse" heading="Peer                     AS      InPkt     OutPkt    OutQ   Flaps Last Up/Dwn State|#Active/Received/Accepted/Damped...">
+            <peer-address>203.0.113.1</peer-address>
+            <peer-as>3356</peer-as>
+            <input-messages>1234567</input-messages>
+            <output-messages>45678</output-messages>
+            <route-queue-count>0</route-queue-count>
+            <flap-count>2</flap-count>
+            <elapsed-time junos:seconds="1209845">2w0d 0:04:05</elapsed-time>
+            <peer-state junos:format="Establ">Established</peer-state>
+            <description>TRANSIT-LUMEN</description>
+            <bgp-rib junos:style="terse"><name>inet.0</name><active-prefix-count>900000</active-prefix-count><received-prefix-count>949000</received-prefix-count><accepted-prefix-count>948990</accepted-prefix-count><suppressed-prefix-count>0</suppressed-prefix-count></bgp-rib>
+        </bgp-peer>
+        <bgp-peer junos:style="terse">
+            <peer-address>2001:db8::1</peer-address>
+            <peer-as>3356</peer-as>
+            <input-messages>220011</input-messages>
+            <output-messages>45000</output-messages>
+            <route-queue-count>0</route-queue-count>
+            <flap-count>0</flap-count>
+            <elapsed-time junos:seconds="9234">2:33:54</elapsed-time>
+            <peer-state junos:format="Establ">Established</peer-state>
+            <bgp-rib junos:style="terse"><name>inet6.0</name><active-prefix-count>200000</active-prefix-count><received-prefix-count>210000</received-prefix-count><accepted-prefix-count>209000</accepted-prefix-count></bgp-rib>
+        </bgp-peer>
+        <bgp-peer junos:style="terse">
+            <peer-address>10.10.0.2</peer-address>
+            <peer-as>65020</peer-as>
+            <input-messages>10</input-messages>
+            <output-messages>12</output-messages>
+            <route-queue-count>0</route-queue-count>
+            <flap-count>5</flap-count>
+            <elapsed-time>12:34</elapsed-time>
+            <peer-state>Active</peer-state>
+        </bgp-peer>
+    </bgp-information>
+</rpc-reply>

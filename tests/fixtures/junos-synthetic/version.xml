@@ -1,0 +1,16 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/21.4R3/junos">
+    <multi-routing-engine-results>
+        <multi-routing-engine-item>
+            <re-name>fpc0</re-name>
+            <software-information>
+                <host-name>qfx-lab-01</host-name>
+                <product-model>qfx5120-48y-8c</product-model>
+                <product-name>qfx5120-48y-8c</product-name>
+                <junos-version>21.4R3-S5.4</junos-version>
+            </software-information>
+        </multi-routing-engine-item>
+    </multi-routing-engine-results>
+    <cli>
+        <banner>{master:0}</banner>
+    </cli>
+</rpc-reply>

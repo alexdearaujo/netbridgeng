@@ -1,0 +1,8 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/22.4R3/junos">
+<chassis-inventory xmlns="http://xml.juniper.net/junos/22.4R3/junos-chassis">
+    <chassis junos:style="inventory"><name>Chassis</name><serial-number>JN0000000DEMO</serial-number><description>MX960</description></chassis>
+</chassis-inventory>
+    <cli>
+        <banner>{master}</banner>
+    </cli>
+</rpc-reply>

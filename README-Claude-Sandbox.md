@@ -39,6 +39,19 @@ node -e "const fs=require('fs');const h=fs.readFileSync('netbridgeng/static/inde
 
 The demo ticks every 3 s on a 90 s cycle: a leaf link and its LLDP neighbor and OSPF adjacency drop at about 24 s and return at about 48 s; a BGP session flaps from about 60 s to 75 s; the fabric is calm from 75 s until the next cycle. Wait on page state rather than time, for example `Radar.lostCount()>0`, `Ospf.lost()>0`, or a peer in `D.bgp.vrfs.default.peers` not Established. `setView('lldp'|'util'|'therm'|'bgp'|'ospf')` and `setDetail(true)` switch views from a script.
 
+## Junos adapter
+
+No Junos box is reachable either. The adapter runs against synthetic replies:
+
+```bash
+python3 -m pytest -q tests
+python3 -m netbridgeng.collectors.juniper adapt tests/fixtures/junos-synthetic
+```
+
+`adapt` writes `bridge.json` next to the replies (delete it before committing).
+
+To see the bridge draw Junos data, start the server and load `/?demo=junos`: the synthetic MX in `netbridgeng/collectors/juniper/demo/` goes through the adapter on every load (`GET /api/demo/junos`) and the page animates it. The demo ticks every 3 s; `D.meta.poll_count % 30` is 8-15 during the link loss and 20-24 during the IX BGP flap, so a screenshot script can wait on it. Regenerate the dataset with `python3 tools/make_junos_demo.py`.
+
 ## Sandbox quirks
 
 - WebGL runs on SwiftShader: give screenshots long timeouts and a few seconds to settle after a view change.

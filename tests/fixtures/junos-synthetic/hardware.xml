@@ -1,0 +1,10 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/21.4R3/junos">
+    <chassis-inventory xmlns="http://xml.juniper.net/junos/21.4R3/junos-chassis">
+        <chassis junos:style="inventory">
+            <name>Chassis</name>
+            <serial-number>WS0000000001</serial-number>
+            <description>QFX5120-48Y-8C</description>
+            <chassis-module><name>FPC 0</name><serial-number>WS0000000001</serial-number><description>QFX5120-48Y-8C</description></chassis-module>
+        </chassis>
+    </chassis-inventory>
+</rpc-reply>

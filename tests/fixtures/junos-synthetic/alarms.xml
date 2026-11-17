@@ -1,0 +1,12 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/21.4R3/junos">
+    <alarm-information xmlns="http://xml.juniper.net/junos/21.4R3/junos-alarm">
+        <alarm-summary><active-alarm-count>1</active-alarm-count></alarm-summary>
+        <alarm-detail>
+            <alarm-time junos:seconds="1763300000">2025-11-16 13:33:20 UTC</alarm-time>
+            <alarm-class>Minor</alarm-class>
+            <alarm-description>Fan Tray 2 Fan 0 Spinning at high speed</alarm-description>
+            <alarm-short-description>FPC 0 Fan 2</alarm-short-description>
+            <alarm-type>Chassis</alarm-type>
+        </alarm-detail>
+    </alarm-information>
+</rpc-reply>

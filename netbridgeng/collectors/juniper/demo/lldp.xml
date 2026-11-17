@@ -1,0 +1,88 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/22.4R3/junos">
+<lldp-neighbors-information junos:style="brief">
+    <lldp-neighbor-information>
+        <lldp-local-port-id>et-0/0/0</lldp-local-port-id>
+        <lldp-local-parent-interface-name>-</lldp-local-parent-interface-name>
+        <lldp-remote-chassis-id-subtype>Mac address</lldp-remote-chassis-id-subtype>
+        <lldp-remote-chassis-id>02:00:00:00:01:01</lldp-remote-chassis-id>
+        <lldp-remote-port-id-subtype>Interface name</lldp-remote-port-id-subtype>
+        <lldp-remote-port-id>et-3/0/1</lldp-remote-port-id>
+        <lldp-remote-system-name>tr-a-pe1.example.com</lldp-remote-system-name>
+    </lldp-neighbor-information>
+    <lldp-neighbor-information>
+        <lldp-local-port-id>et-0/0/2</lldp-local-port-id>
+        <lldp-local-parent-interface-name>ae0</lldp-local-parent-interface-name>
+        <lldp-remote-chassis-id-subtype>Mac address</lldp-remote-chassis-id-subtype>
+        <lldp-remote-chassis-id>02:00:00:00:02:01</lldp-remote-chassis-id>
+        <lldp-remote-port-id-subtype>Interface name</lldp-remote-port-id-subtype>
+        <lldp-remote-port-id>et-0/0/4</lldp-remote-port-id>
+        <lldp-remote-system-name>core-01.dc1.example.net</lldp-remote-system-name>
+    </lldp-neighbor-information>
+    <lldp-neighbor-information>
+        <lldp-local-port-id>et-0/0/3</lldp-local-port-id>
+        <lldp-local-parent-interface-name>ae0</lldp-local-parent-interface-name>
+        <lldp-remote-chassis-id-subtype>Mac address</lldp-remote-chassis-id-subtype>
+        <lldp-remote-chassis-id>02:00:00:00:03:01</lldp-remote-chassis-id>
+        <lldp-remote-port-id-subtype>Interface name</lldp-remote-port-id-subtype>
+        <lldp-remote-port-id>et-0/0/4</lldp-remote-port-id>
+        <lldp-remote-system-name>core-02.dc1.example.net</lldp-remote-system-name>
+    </lldp-neighbor-information>
+    <lldp-neighbor-information>
+        <lldp-local-port-id>et-1/0/0</lldp-local-port-id>
+        <lldp-local-parent-interface-name>-</lldp-local-parent-interface-name>
+        <lldp-remote-chassis-id-subtype>Mac address</lldp-remote-chassis-id-subtype>
+        <lldp-remote-chassis-id>02:00:00:00:04:01</lldp-remote-chassis-id>
+        <lldp-remote-port-id-subtype>Interface name</lldp-remote-port-id-subtype>
+        <lldp-remote-port-id>Ethernet12/1</lldp-remote-port-id>
+        <lldp-remote-system-name>ix-sw-03.example-ix.net</lldp-remote-system-name>
+    </lldp-neighbor-information>
+    <lldp-neighbor-information>
+        <lldp-local-port-id>et-1/0/1</lldp-local-port-id>
+        <lldp-local-parent-interface-name>-</lldp-local-parent-interface-name>
+        <lldp-remote-chassis-id-subtype>Mac address</lldp-remote-chassis-id-subtype>
+        <lldp-remote-chassis-id>02:00:00:00:05:01</lldp-remote-chassis-id>
+        <lldp-remote-port-id-subtype>Interface name</lldp-remote-port-id-subtype>
+        <lldp-remote-port-id>et-0/0/48</lldp-remote-port-id>
+        <lldp-remote-system-name>agg-01.dc1.example.net</lldp-remote-system-name>
+    </lldp-neighbor-information>
+    <lldp-neighbor-information>
+        <lldp-local-port-id>xe-2/0/0</lldp-local-port-id>
+        <lldp-local-parent-interface-name>-</lldp-local-parent-interface-name>
+        <lldp-remote-chassis-id-subtype>Mac address</lldp-remote-chassis-id-subtype>
+        <lldp-remote-chassis-id>02:00:00:00:06:01</lldp-remote-chassis-id>
+        <lldp-remote-port-id-subtype>Interface name</lldp-remote-port-id-subtype>
+        <lldp-remote-port-id>ge-0/0/0</lldp-remote-port-id>
+        <lldp-remote-system-name>cust-a-rtr1</lldp-remote-system-name>
+    </lldp-neighbor-information>
+    <lldp-neighbor-information>
+        <lldp-local-port-id>xe-2/0/1</lldp-local-port-id>
+        <lldp-local-parent-interface-name>-</lldp-local-parent-interface-name>
+        <lldp-remote-chassis-id-subtype>Mac address</lldp-remote-chassis-id-subtype>
+        <lldp-remote-chassis-id>02:00:00:00:07:01</lldp-remote-chassis-id>
+        <lldp-remote-port-id-subtype>Interface name</lldp-remote-port-id-subtype>
+        <lldp-remote-port-id>xe-0/0/2</lldp-remote-port-id>
+        <lldp-remote-system-name>cust-b-rtr1</lldp-remote-system-name>
+    </lldp-neighbor-information>
+    <lldp-neighbor-information>
+        <lldp-local-port-id>xe-2/0/3</lldp-local-port-id>
+        <lldp-local-parent-interface-name>-</lldp-local-parent-interface-name>
+        <lldp-remote-chassis-id-subtype>Mac address</lldp-remote-chassis-id-subtype>
+        <lldp-remote-chassis-id>02:00:00:00:08:01</lldp-remote-chassis-id>
+        <lldp-remote-port-id-subtype>Interface name</lldp-remote-port-id-subtype>
+        <lldp-remote-port-id>xe-0/0/47</lldp-remote-port-id>
+        <lldp-remote-system-name>agg-02.dc1.example.net</lldp-remote-system-name>
+    </lldp-neighbor-information>
+    <lldp-neighbor-information>
+        <lldp-local-port-id>xe-2/0/4</lldp-local-port-id>
+        <lldp-local-parent-interface-name>-</lldp-local-parent-interface-name>
+        <lldp-remote-chassis-id-subtype>Mac address</lldp-remote-chassis-id-subtype>
+        <lldp-remote-chassis-id>02:00:00:00:09:01</lldp-remote-chassis-id>
+        <lldp-remote-port-id-subtype>Interface name</lldp-remote-port-id-subtype>
+        <lldp-remote-port-id>eth2</lldp-remote-port-id>
+        <lldp-remote-system-name>flow-collector-01.dc1.example.net</lldp-remote-system-name>
+    </lldp-neighbor-information>
+</lldp-neighbors-information>
+    <cli>
+        <banner>{master}</banner>
+    </cli>
+</rpc-reply>

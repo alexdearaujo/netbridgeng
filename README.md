@@ -11,7 +11,7 @@ pip install netbridgeng
 netbridgeng
 ```
 
-Then open <http://127.0.0.1:8470/?demo> for the demo, or <http://127.0.0.1:8470/> to connect to a switch. Everything it needs is bundled: it runs with no internet access.
+Then open <http://127.0.0.1:8470/?demo> for the demo (<http://127.0.0.1:8470/?demo=junos> for the Juniper one), or <http://127.0.0.1:8470/> to connect to a switch. Everything it needs is bundled: it runs with no internet access.
 
 ## Why this exists
 
@@ -25,7 +25,7 @@ netbridgeng is a proof of concept with that point to make. It connects to one sw
 
 It is not trying to be practical. It is not a monitoring system, it keeps no history beyond the open page, and nobody needs a radar to read `show lldp neighbors`. Its job is to explore what is possible, and to make the case that the distance between the data a device holds and the way we are shown it is a choice, not a law.
 
-Arista EOS is the example because `| json` makes it easy. The idea is not Arista's: see [Not just Arista](#not-just-arista).
+Arista EOS was the first example because `| json` makes it easy. Juniper Junos is the second, picked from the connect dialog: see [Not just Arista](#not-just-arista).
 
 ## What it shows
 
@@ -42,8 +42,21 @@ All screenshots are from the built-in demo mode (`?demo`): a fictional spine in 
 | ![OSPF](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/07b-ospf.png) | **OSPF.** Adjacencies on one ring per area. The conduit's color is the adjacency state, the sleeve is BFD, a pulse runs while it holds. Beads count state changes (red ones happened since the page opened); retransmissions that rose since the last poll throw amber sparks. The column over the router stacks its OSPF routes by type. |
 | ![OSPF adjacency lost](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/07-ospf-adjacency-lost.png) | **An adjacency is lost** when the leaf link drops: red, fading, and counted in the header. |
 | ![SSH console](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/08-ssh-console-demo.png) | **The device's own CLI**, in a console that sits over the bridge rather than in it: a solid, extruded slab, draggable and resizable, on the same session as the telemetry. In demo mode a small shell answers a few `show` commands from the sample data. |
-| ![Connect](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/00-connect.png) | **Connect** straight to a device: SSH key on the server, an uploaded key, or a password. The server tests SSH before it creates the session. |
+| ![Connect](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/00-connect.png) | **Connect** straight to a device: pick the platform (Arista EOS or Juniper Junos), then SSH key on the server, an uploaded key, or a password. The server tests SSH before it creates the session. |
 | ![Phone](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/09-phone.png) | **On a phone** the stations stack under the main screen. |
+
+### The same bridge on Juniper
+
+`?demo=junos` is a fictional MX960 edge router: two transits with full tables, an IX, two cores over OSPF and iBGP, aggregation and customer ports. It is stored as raw `| display xml` replies, and the server runs them through the real Junos adapter on every load, so what you see is the adapter's output, animated: traffic, an aggregation link loss that takes its LLDP and OSPF neighbor with it, and an IX session flap. The page has no Junos code.
+
+| | |
+|---|---|
+| ![Junos radar](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/10-junos-lldp-ospf-radar.png) | **Radar** from `show lldp neighbors` and `show ospf neighbor detail`. Transits, IX switch, cores, aggregation and customers by role; ports in FPC/PIC/port order. |
+| ![Junos link lost](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/13-junos-link-lost.png) | **`xe-2/0/3` drops.** agg-02 goes dark, its OSPF adjacency is counted lost in the header, and syslog shows `SNMP_TRAP_LINK_DOWN` and `RPD_OSPF_NBRDOWN`. |
+| ![Junos utilization](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/11-junos-utilization.png) | **Utilization** from `show interfaces extensive` octets and drops: 100G `et-` and 10G `xe-` ports on one panel, transit-A bursting into discards. |
+| ![Junos environment](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/12-junos-environment.png) | **Environment** from `show chassis environment`: four PEMs with their own temperatures, three fan trays, FPC and CB sensors. Junos reports no per-sensor limits, so the gauges show status words instead of setpoint rings. |
+| ![Junos BGP flap](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/14-junos-bgp-flap.png) | **BGP** from `show bgp summary`, with v4 and v6 transits, IX peers and iBGP. An IX peer goes Idle: CRITICAL, with the reason in the header. |
+| ![Junos console](https://raw.githubusercontent.com/scottpeterman/netbridgeng/main/screenshots/15-junos-console-demo.png) | **Console demo shell** takes Junos command names (`show bgp summary \| no-more`) and answers from the data on screen. |
 
 Side stations (BGP peers, environment, interfaces, syslog) stay in view around the main screen, and tapping one switches the main screen to its 3D view. The header carries one status, **HEALTHY / DEGRADED / CRITICAL**, with the reason beside it.
 
@@ -94,7 +107,7 @@ pip install -e .
 netbridgeng
 ```
 
-Open <http://127.0.0.1:8470/> and connect to an Arista EOS switch, or <http://127.0.0.1:8470/?demo> for the demo. The page also runs the demo straight from disk: open `netbridgeng/static/index.html?demo` in a browser, no server needed.
+Open <http://127.0.0.1:8470/>, pick Arista EOS or Juniper Junos and connect, or <http://127.0.0.1:8470/?demo> for the demo. The page also runs the demo straight from disk: open `netbridgeng/static/index.html?demo` in a browser, no server needed.
 
 `config.yaml` only pre-fills the connect dialog and sets the poll interval (15 s by default) and where the server listens. It is read from `--config`, then `$NETBRIDGENG_CONFIG`, then `./config.yaml`; `--host` and `--port` override the listen address. `requirements.txt` pins paramiko to 4.0.0 for older devices; the package itself accepts any 4.x.
 
@@ -114,6 +127,7 @@ Open <http://127.0.0.1:8470/> and connect to an Arista EOS switch, or <http://12
 ```
 
 - `netbridgeng/collectors/arista/` runs the commands over one persistent SSH session and returns a single dictionary per poll (JSON where EOS offers it, parsers for the environment and syslog text).
+- `netbridgeng/collectors/juniper/` does the same over `| display xml`, and `adapter.py` maps the Junos replies onto the EOS-shaped contract below, so the page needs no Junos code.
 - `netbridgeng/server.py` holds sessions, runs the poll loop, pushes each result over `/ws`, proxies the SSH terminal over `/ws/terminal`, and creates sessions through `POST /api/connect`.
 - `netbridgeng/static/index.html` is the whole frontend: no build step, no framework. Rates (bits per second, discards, BGP messages, OSPF retransmits) are worked out in the page from counter deltas between polls, and history lives in the page for as long as it is open.
 
@@ -134,7 +148,32 @@ The page does not know it is talking to Arista. It reads one JSON document per p
 | `logging[]` | `timestamp`, `source`, `severity`, `mnemonic`, `message` | syslog |
 | `meta` | `hostname`, `timestamp`, `poll_count`, `poll_time`, `error`, `stale` | header, rates |
 
-Junos (`| display json`), NX-OS (`| json`), IOS-XE (TextFSM, Genie or RESTCONF) and OpenConfig over gNMI can all be mapped into this shape. A second collector is the most direct way to prove the point further.
+The second collector, Juniper Junos, is that point made. It runs `| display xml` (old Junos has no `| display json`), and `collectors/juniper/adapter.py` maps each reply onto these keys. The page has no Junos code; the platform is chosen in the connect dialog and enforced by the server.
+
+| Bridge key | Junos source |
+|---|---|
+| `version` | `show version`, `show chassis hardware`, `show chassis routing-engine` |
+| `interfaces`, `counters` | `show interfaces extensive` (physical ports only; logical units dropped) |
+| `lldp` | `show lldp neighbors` (units stripped so ports match) |
+| `bgp` | `show bgp summary`, local AS and router ID from `show configuration routing-options` |
+| `ospf` | `show ospf neighbor detail` |
+| `routes` | `show route summary` (inet.0) |
+| `environment` | `show chassis environment`, with `show chassis alarms` as the temperature / cooling status |
+| `proc` | master routing engine CPU from `show chassis routing-engine` |
+| `logging` | `show log messages \| last 50` |
+
+What Junos does not report is left empty rather than invented, and the page copes: no per-sensor setpoint or alert limits (sensor status words and chassis alarms carry the health instead), fan speed as text rather than a percent, no PSU watts, no OSPF retransmission or state-change counters, OSPF routes as one bucket (no intra/inter/external split), and syslog severity is not in the default `messages` format.
+
+To check the adapter against a real box once and then iterate offline:
+
+```bash
+python -m netbridgeng.collectors.juniper capture --host edge1.example.net --user scott --out cap/edge1
+python -m netbridgeng.collectors.juniper adapt cap/edge1
+```
+
+`capture` saves each raw reply and prints a coverage report; `adapt` re-runs the adapter on the saved replies.
+
+NX-OS (`| json`), IOS-XE (TextFSM, Genie or RESTCONF) and OpenConfig over gNMI can be mapped the same way.
 
 ## Honest notes
 
@@ -142,6 +181,8 @@ Junos (`| display json`), NX-OS (`| json`), IOS-XE (TextFSM, Genie or RESTCONF) 
 - **Sensor placement is grouped by name** (switch chip, CPU, PSU, front, rear). The data carries no physical positions, and the views say so.
 - **Rates and history live in the page.** They start when the page opens and go when it closes.
 - **Tested against** an Arista 7280R-series switch on EOS 4.21, and the demo. Other EOS versions and platforms may name sensors differently.
+- **The Junos adapter** has been run against synthetic replies (`tests/fixtures/junos-synthetic/`) written to the documented XML tags. Run `capture` against your own box before trusting it.
+- **`show interfaces extensive`** is the heaviest Junos command in the poll on a router with many logical units. `device.juniper.interfaces_command` in `config.yaml` swaps it (`show interfaces detail` is lighter but has no drop counters).
 
 ## Security
 
@@ -159,9 +200,13 @@ netbridgeng/
   server.py                 sessions, poll loop, /ws, /ws/terminal, /api/connect, /api/defaults
   config.example.yaml       netbridgeng --print-config
   collectors/arista/        collector.py (netmiko, show | json), parsers.py (environment, syslog)
+  collectors/juniper/       collector.py (netmiko, show | display xml), adapter.py (Junos -> bridge keys),
+                            __main__.py (capture / adapt), demo/ (synthetic MX replies for ?demo=junos)
   static/index.html         the bridge
   static/vendor/            three.js, xterm.js, fonts, and their licenses
 screenshots/                demo mode
+tests/                      adapter tests, synthetic Junos replies
+tools/make_junos_demo.py    writes collectors/juniper/demo/
 pyproject.toml
 requirements.txt
 LICENSE                     GPL-3.0

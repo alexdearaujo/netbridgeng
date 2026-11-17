@@ -47,6 +47,8 @@ LOGGING_CMDS = [
 class AristaCollector:
     """Collects operational state from an Arista EOS device via Netmiko."""
 
+    platform = "arista_eos"
+
     def __init__(self, device_config: dict):
         self.device_params = {
             "device_type": device_config.get("device_type", "arista_eos"),
@@ -172,6 +174,7 @@ class AristaCollector:
                 "poll_time": None,
                 "error": None,
                 "timestamp": time.time(),
+                "platform": "arista_eos",
             }
         }
 
@@ -301,5 +304,6 @@ class AristaCollector:
                 "error": self._last_error,
                 "stale": False,
                 "timestamp": time.time(),
+                "platform": "arista_eos",
             }
         }

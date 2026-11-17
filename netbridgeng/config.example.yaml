@@ -1,13 +1,18 @@
 # netbridgeng configuration. Copy to config.yaml and edit; everything here only pre-fills the connect dialog.
 
 device:
+  platform: arista_eos     # arista_eos | juniper_junos  (pre-selects the connect dialog's platform)
   host: ""                 # pre-filled in the connect dialog
   username: ""
   use_keys: true
   key_file: "~/.ssh/id_rsa"  # used when "server key" is chosen in the dialog
   timeout: 30
   session_timeout: 60
-  legacy_ssh: false        # true for EOS < 4.25 / OpenSSH < 7.2 (disables rsa-sha2-256/512 pubkeys)
+  legacy_ssh: false        # true for device OpenSSH < 7.2 (disables rsa-sha2-256/512 pubkeys)
+#  juniper:
+#    # The default carries octets and drop counters; on a box with many logical units it is the slowest
+#    # command in the poll. 'show interfaces detail | display xml | no-more' is lighter but has no drops.
+#    interfaces_command: "show interfaces extensive | display xml | no-more"
 
 # Seconds between collection passes
 poll_interval: 15

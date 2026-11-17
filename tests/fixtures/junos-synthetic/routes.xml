@@ -1,0 +1,24 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/21.4R3/junos">
+    <route-summary-information xmlns="http://xml.juniper.net/junos/21.4R3/junos-routing">
+        <as-number>65020</as-number>
+        <router-id>10.255.0.11</router-id>
+        <route-table>
+            <table-name>inet.0</table-name>
+            <destination-count>950321</destination-count>
+            <total-route-count>1900210</total-route-count>
+            <active-route-count>950321</active-route-count>
+            <holddown-route-count>0</holddown-route-count>
+            <hidden-route-count>3</hidden-route-count>
+            <protocols><protocol-name>Direct</protocol-name><protocol-route-count>12</protocol-route-count><active-route-count>12</active-route-count></protocols>
+            <protocols><protocol-name>Local</protocol-name><protocol-route-count>12</protocol-route-count><active-route-count>12</active-route-count></protocols>
+            <protocols><protocol-name>OSPF</protocol-name><protocol-route-count>240</protocol-route-count><active-route-count>230</active-route-count></protocols>
+            <protocols><protocol-name>BGP</protocol-name><protocol-route-count>1899940</protocol-route-count><active-route-count>950060</active-route-count></protocols>
+        </route-table>
+        <route-table>
+            <table-name>inet6.0</table-name>
+            <destination-count>210000</destination-count>
+            <total-route-count>210000</total-route-count>
+            <active-route-count>210000</active-route-count>
+        </route-table>
+    </route-summary-information>
+</rpc-reply>

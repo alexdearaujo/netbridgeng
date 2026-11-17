@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "netbridgeng"
-version = "0.1.0"
-description = "Proof of concept: a network device's own telemetry, rendered as a ship's bridge in the browser (Arista EOS first)."
+version = "0.2.0"
+description = "Proof of concept: a network device's own telemetry, rendered as a ship's bridge in the browser (Arista EOS and Juniper Junos)."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "Scott Peterman" }]
-keywords = ["network", "arista", "eos", "telemetry", "visualization", "three.js", "lldp", "bgp", "ospf", "network-automation"]
+keywords = ["network", "arista", "eos", "juniper", "junos", "telemetry", "visualization", "three.js", "lldp", "bgp", "ospf", "network-automation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Web Environment",
@@ -40,7 +40,7 @@ Issues = "https://github.com/scottpeterman/netbridgeng/issues"
 netbridgeng = "netbridgeng.server:main"
 
 [tool.setuptools]
-packages = ["netbridgeng", "netbridgeng.collectors", "netbridgeng.collectors.arista"]
+packages = ["netbridgeng", "netbridgeng.collectors", "netbridgeng.collectors.arista", "netbridgeng.collectors.juniper"]
 include-package-data = true
 
 [tool.setuptools.package-data]
@@ -48,6 +48,8 @@ netbridgeng = [
     "config.example.yaml",
     "static/*.html",
     "static/vendor/*.js",
+    "collectors/juniper/demo/*.xml",
+    "collectors/juniper/demo/*.txt",
     "static/vendor/*.md",
     "static/vendor/fonts/*.woff2",
     "static/vendor/licenses/*.txt",

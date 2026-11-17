@@ -1,0 +1,5 @@
+Nov 16 06:12:40  edge-01 mgd[61022]: UI_LOGIN_EVENT: User 'netops' login, class 'j-super-user' [61022], ssh-connection '192.0.2.200 52218 192.0.2.11 22', client-mode 'cli'
+Nov 16 06:13:02  edge-01 mgd[61022]: UI_CMDLINE_READ_LINE: User 'netops', command 'show bgp summary '
+Nov 16 06:40:11  edge-01 rpd[2210]: RPD_BGP_NEIGHBOR_STATE_CHANGED: BGP peer 192.0.2.23 (External AS 64507) changed state from OpenConfirm to Established (event RecvKeepAlive) (instance master)
+Nov 16 07:05:19  edge-01 chassisd[1999]: CHASSISD_FRU_ONLINE_TIMEOUT: Fan Tray 3 not present
+Nov 16 07:30:00  edge-01 sshd[71100]: Accepted publickey for netops from 192.0.2.200 port 52301 ssh2: RSA SHA256:demo

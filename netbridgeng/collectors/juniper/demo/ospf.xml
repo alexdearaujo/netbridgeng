@@ -1,0 +1,31 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/22.4R3/junos">
+<ospf-neighbor-information xmlns="http://xml.juniper.net/junos/22.4R3/junos-routing">
+    <ospf-neighbor>
+        <neighbor-address>10.0.0.1</neighbor-address><interface-name>et-0/0/2.0</interface-name><ospf-neighbor-state>Full</ospf-neighbor-state>
+        <neighbor-id>10.255.0.1</neighbor-id><neighbor-priority>128</neighbor-priority><activity-timer>33</activity-timer>
+        <ospf-area>0.0.0.0</ospf-area><options>0x52</options><dr-address>0.0.0.0</dr-address><bdr-address>0.0.0.0</bdr-address>
+        <neighbor-up-time junos:seconds="10469469">17w2d 04:11:09</neighbor-up-time><neighbor-adjacency-time junos:seconds="10469469">17w2d 04:11:09</neighbor-adjacency-time>
+    </ospf-neighbor>
+    <ospf-neighbor>
+        <neighbor-address>10.0.0.3</neighbor-address><interface-name>et-0/0/3.0</interface-name><ospf-neighbor-state>Full</ospf-neighbor-state>
+        <neighbor-id>10.255.0.2</neighbor-id><neighbor-priority>128</neighbor-priority><activity-timer>33</activity-timer>
+        <ospf-area>0.0.0.0</ospf-area><options>0x52</options><dr-address>0.0.0.0</dr-address><bdr-address>0.0.0.0</bdr-address>
+        <neighbor-up-time junos:seconds="10469469">17w2d 04:11:09</neighbor-up-time><neighbor-adjacency-time junos:seconds="10469469">17w2d 04:11:09</neighbor-adjacency-time>
+    </ospf-neighbor>
+    <ospf-neighbor>
+        <neighbor-address>10.0.0.9</neighbor-address><interface-name>et-1/0/1.0</interface-name><ospf-neighbor-state>Full</ospf-neighbor-state>
+        <neighbor-id>10.255.0.21</neighbor-id><neighbor-priority>128</neighbor-priority><activity-timer>33</activity-timer>
+        <ospf-area>0.0.0.0</ospf-area><options>0x52</options><dr-address>0.0.0.0</dr-address><bdr-address>0.0.0.0</bdr-address>
+        <neighbor-up-time junos:seconds="10469469">17w2d 04:11:09</neighbor-up-time><neighbor-adjacency-time junos:seconds="10469469">17w2d 04:11:09</neighbor-adjacency-time>
+    </ospf-neighbor>
+    <ospf-neighbor>
+        <neighbor-address>10.0.0.13</neighbor-address><interface-name>xe-2/0/3.0</interface-name><ospf-neighbor-state>Full</ospf-neighbor-state>
+        <neighbor-id>10.255.0.22</neighbor-id><neighbor-priority>128</neighbor-priority><activity-timer>33</activity-timer>
+        <ospf-area>0.0.0.0</ospf-area><options>0x52</options><dr-address>0.0.0.0</dr-address><bdr-address>0.0.0.0</bdr-address>
+        <neighbor-up-time junos:seconds="10469469">17w2d 04:11:09</neighbor-up-time><neighbor-adjacency-time junos:seconds="10469469">17w2d 04:11:09</neighbor-adjacency-time>
+    </ospf-neighbor>
+</ospf-neighbor-information>
+    <cli>
+        <banner>{master}</banner>
+    </cli>
+</rpc-reply>

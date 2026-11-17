@@ -1,0 +1,11 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/22.4R3/junos">
+<configuration junos:commit-seconds="1763290000" junos:commit-user="netops">
+    <routing-options>
+        <router-id>10.255.0.11</router-id>
+        <autonomous-system><as-number>65020</as-number></autonomous-system>
+    </routing-options>
+</configuration>
+    <cli>
+        <banner>{master}</banner>
+    </cli>
+</rpc-reply>

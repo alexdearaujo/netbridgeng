@@ -23,6 +23,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body, Query
 from fastapi.staticfiles import StaticFiles
 
 from .collectors.arista.collector import AristaCollector
+from .collectors.juniper.collector import JuniperCollector, demo_payload as junos_demo_payload
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,10 +32,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger("netbridgeng")
 
-# This server is vendor-locked: its collector/parsers only understand
-# arista_eos. device_type is forced to this value so the netmiko driver can
-# never diverge from the parsers, regardless of what a client sends.
-SERVER_DEVICE_TYPE = "arista_eos"
+# Supported platforms. The key is the netmiko device_type and picks the collector; a client can only
+# choose from this list, so the netmiko driver can never diverge from the parsers behind it.
+# Every collector returns the same EOS-shaped payload, which is all the page reads.
+PLATFORMS = {
+    "arista_eos":    {"label": "Arista EOS",    "collector": AristaCollector},
+    "juniper_junos": {"label": "Juniper Junos", "collector": JuniperCollector},
+}
+DEFAULT_PLATFORM = "arista_eos"
+
+
+def _platform(value: str | None) -> str | None:
+    """A client- or config-supplied platform, if it is one we support."""
+    v = (value or "").strip().lower()
+    return v if v in PLATFORMS else None
 
 # ---- Global state ----
 CONFIG: dict = {}
@@ -45,7 +56,7 @@ SESSION_TTL = 300  # seconds without WS clients before reaping
 class Session:
     session_id: str
     device_config: dict
-    collector: AristaCollector
+    collector: AristaCollector | JuniperCollector
     poll_task: asyncio.Task | None = None
     latest_data: dict | None = None
     clients: set = field(default_factory=set)
@@ -242,6 +253,13 @@ async def get_data(session: str | None = Query(None)):
     return {"error": "No data collected yet"}
 
 
+@app.get("/api/demo/junos")
+async def demo_junos():
+    """?demo=junos: a synthetic MX edge router, stored as raw Junos XML and run through the real adapter
+    on every request. The page animates traffic, temperatures and events on top of it."""
+    return junos_demo_payload()
+
+
 @app.get("/api/status")
 async def get_status(session: str | None = Query(None)):
     """Server health check."""
@@ -263,7 +281,8 @@ async def get_defaults():
     return {
         "host":        dev.get("host", ""),
         "username":    dev.get("username", ""),
-        "device_type": SERVER_DEVICE_TYPE,
+        "platform":    _platform(dev.get("platform")) or DEFAULT_PLATFORM,
+        "platforms":   [{"id": k, "label": v["label"]} for k, v in PLATFORMS.items()],
         "use_keys":    dev.get("use_keys", True),
         "key_file":    dev.get("key_file", "~/.ssh/id_rsa"),
         "legacy_ssh":  dev.get("legacy_ssh", False),
@@ -283,7 +302,11 @@ async def connect_device(body: dict = Body(...)):
                 "use_keys", "key_file", "legacy_ssh", "port", "timeout"):
         if key in body and body[key] is not None:
             new_dev[key] = body[key]
-    new_dev["device_type"] = SERVER_DEVICE_TYPE  # authoritative; ignore client value
+    platform = _platform(body.get("platform")) if "platform" in body else (_platform(new_dev.get("platform")) or DEFAULT_PLATFORM)
+    if not platform:
+        return {"status": "error", "message": f"unsupported platform '{body.get('platform')}' (supported: {', '.join(PLATFORMS)})"}
+    new_dev["platform"] = platform
+    new_dev["device_type"] = platform  # authoritative; any client device_type is ignored
 
     # Handle uploaded SSH key text — write to secure temp file
     tmp_key_path = None
@@ -328,7 +351,7 @@ async def connect_device(body: dict = Body(...)):
                 pass
 
     # Create collector and test connectivity
-    collector = AristaCollector(new_dev)
+    collector = PLATFORMS[platform]["collector"](new_dev)
     try:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, collector.test_connect)
@@ -361,7 +384,8 @@ async def connect_device(body: dict = Body(...)):
         "session_id": sid,
         "host": new_dev["host"],
         "username": new_dev["username"],
-        "device_type": new_dev.get("device_type", "arista_eos"),
+        "device_type": platform,
+        "platform": platform,
     }
 
 

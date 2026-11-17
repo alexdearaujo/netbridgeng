@@ -197,7 +197,7 @@ body.term-open .bridge{filter:brightness(.5) saturate(.75) blur(1px);transition:
   <header class="frame">
     <h1 id="h-name">—</h1>
     <span><span class="k">MODEL </span><span class="v" id="h-model">—</span></span>
-    <span><span class="k">EOS </span><span class="v" id="h-ver">—</span></span>
+    <span><span class="k" id="h-osk">EOS </span><span class="v" id="h-ver">—</span></span>
     <span><span class="k">UPTIME </span><span class="v" id="h-up">—</span></span>
     <span><span class="k">CPU </span><span class="v" id="h-cpu">—</span></span>
     <span><span class="k">POLL </span><span class="v" id="h-poll">—</span></span>
@@ -264,16 +264,17 @@ body.term-open .bridge{filter:brightness(.5) saturate(.75) blur(1px);transition:
   <form id="cx-form" autocomplete="on">
     <h3>Connect</h3>
     <div class="mini" id="cx-why"></div>
+    <label>Platform<select id="cx-platform"><option value="arista_eos">Arista EOS</option><option value="juniper_junos">Juniper Junos</option></select></label>
     <label>Host<input id="cx-host" name="host" placeholder="switch.example.net" spellcheck="false"></label>
     <label>Username<input id="cx-user" name="username" autocomplete="username" spellcheck="false"></label>
     <label>Auth<select id="cx-auth"><option value="server">SSH key on the server</option><option value="upload">Upload a key file</option><option value="password">Password</option></select></label>
     <div class="mini" id="cx-keyhint"></div>
     <label id="cx-pass-row">Password<input id="cx-pass" type="password" autocomplete="current-password"></label>
     <label id="cx-key-row">Key file<input id="cx-key" type="file"></label>
-    <label class="cb"><input id="cx-legacy" type="checkbox"> Legacy SSH (EOS &lt; 4.25 / OpenSSH &lt; 7.2)</label>
+    <label class="cb"><input id="cx-legacy" type="checkbox"> Legacy SSH (device OpenSSH &lt; 7.2: ssh-rsa / SHA-1 key auth)</label>
     <div class="cx-actions"><button class="tbtn" id="cx-go" type="submit">CONNECT ▸</button><button class="tbtn" id="cx-cancel" type="button">CANCEL</button></div>
     <div class="mini" id="cx-status"></div>
-    <div class="mini cx-foot">Arista EOS collector · add <b>?demo</b> to the address for sample data</div>
+    <div class="mini cx-foot">Arista EOS and Juniper Junos collectors · add <b>?demo</b> (Arista) or <b>?demo=junos</b> to the address for sample data</div>
   </form>
 </div>
 <div class="term3d" id="term3d">
@@ -296,6 +297,16 @@ const Q = new URLSearchParams(location.search);
 const get = (o, p, d) => { for (const k of p.split('.')) { if (o == null || !(k in o)) return d; o = o[k]; } return o ?? d; };
 const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
 const shortName = n => (n || '').split('.')[0];
+// front-panel Ethernet ports: EOS 'Ethernet3/1', Junos 'et-0/0/48', 'xe-0/0/1:2', 'ge-1/0/3'. LAGs and management
+// (Port-Channel / ae, Management / em, fxp) stay out of the port strip, as on EOS.
+const isFrontPort = p => /^Ethernet\d/.test(p) || /^(?:ge|xe|et|mge|fe|xle|fte)-\d+\/\d+\/\d+(?::\d+)?$/.test(p);
+// front-panel order: Junos by fpc/pic/port/channel whatever the speed prefix, everything else natural
+const portOrder = (a, b) => {
+  const j = p => (p.match(/^[a-z]+-(\d+)\/(\d+)\/(\d+)(?::(\d+))?$/) || []).slice(1).map(x => +(x || 0));
+  const x = j(a), y = j(b);
+  if (x.length && y.length) { for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; }
+  return natural(a, b);
+};
 const shortPort = p => (p || '').replace(/^Ethernet/, 'Et').replace(/^Port-Channel/, 'Po').replace(/^Management/, 'Ma');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function fmtBps(b) { if (!b || b < 1) return '0'; const u = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps']; let i = 0; while (b >= 1000 && i < 4) { b /= 1000; i++; } return b.toFixed(b < 10 ? 2 : 1) + ' ' + u[i]; }
@@ -348,17 +359,18 @@ let sessionId = Q.get('session');
 try { if (sessionId) sessionStorage.setItem('bridge_session_id', sessionId); else sessionId = sessionStorage.getItem('bridge_session_id'); } catch (e) {}
 const served = /^https?:$/.test(location.protocol) && !/claude|usercontent/.test(location.host);
 let demoOn = false;
-const wantDemo = Q.has('demo') || location.hash === '#demo';
+const wantDemo = Q.has('demo') || /^#demo(=junos)?$/i.test(location.hash);
+const demoJunos = /^junos$/i.test(Q.get('demo') || '') || /^#demo=junos$/i.test(location.hash);
 function noSession(why) {
   $('h-mode').textContent = 'NO SESSION'; $('h-mode').className = 'chip';
   if (served) { Connect.show(why); return; }
-  $('nosess').innerHTML = `<h3>No device</h3><p>This page needs the netbridgeng server to reach a device. Run <b>python -m netbridgeng</b> and open it from there.</p><p class="mini">To see it with sample data, add <b>?demo</b> (or <b>#demo</b> where a query string cannot be passed).</p>`;
+  $('nosess').innerHTML = `<h3>No device</h3><p>This page needs the netbridgeng server to reach a device. Run <b>python -m netbridgeng</b> and open it from there.</p><p class="mini">To see it with sample data, add <b>?demo</b> (or <b>#demo</b> where a query string cannot be passed). The Juniper sample, <b>?demo=junos</b>, needs the server.</p>`;
   $('nosess').style.display = 'block';
 }
 function goDemo(why) {
   if (demoOn) return; demoOn = true;
   $('h-mode').textContent = why || 'DEMO DATA'; $('h-mode').className = 'chip demo';
-  setTimeout(startDemo, 0);
+  setTimeout(demoJunos ? startJunosDemo : startDemo, 0);
 }
 function startLive() {
   $('h-mode').textContent = 'CONNECTING'; $('h-mode').className = 'chip';
@@ -386,6 +398,13 @@ const Connect = (() => {
     el.classList.add('on'); document.body.classList.add('term-open');
     try {   // pre-fill from config.yaml
       const r = await fetch('/api/defaults'); if (r.ok) { const d = await r.json();
+        if (Array.isArray(d.platforms) && d.platforms.length) {
+          const sel = $('cx-platform'), cur = sel.value;
+          sel.innerHTML = d.platforms.map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('');
+          let saved = null; try { saved = localStorage.getItem('bridge_platform'); } catch (x) {}
+          const want = [saved, d.platform, cur].find(v => v && d.platforms.some(p => p.id === v));
+          if (want) sel.value = want;
+        }
         if (!$('cx-host').value) $('cx-host').value = d.host || ''; if (!$('cx-user').value) $('cx-user').value = d.username || '';
         $('cx-legacy').checked = !!d.legacy_ssh; $('cx-keyhint').textContent = d.key_file ? `server key: ${d.key_file}` : ''; }
     } catch (e) {}
@@ -397,7 +416,8 @@ const Connect = (() => {
   $('cx-form').onsubmit = async e => {
     e.preventDefault();
     const btn = $('cx-go'), st = $('cx-status');
-    const body = { host: $('cx-host').value.trim(), username: $('cx-user').value.trim(), legacy_ssh: $('cx-legacy').checked };
+    const body = { platform: $('cx-platform').value, host: $('cx-host').value.trim(), username: $('cx-user').value.trim(), legacy_ssh: $('cx-legacy').checked };
+    try { localStorage.setItem('bridge_platform', body.platform); } catch (x) {}
     if (sessionId) body.session_id = sessionId;
     const a = $('cx-auth').value;
     if (a === 'password') body.password = $('cx-pass').value;
@@ -418,8 +438,107 @@ const Connect = (() => {
 })();
 if (served && !wantDemo) { const b = document.createElement('button'); b.className = 'chip tchip'; b.textContent = '⇄ CONNECT'; b.title = 'Connect to a device'; b.onclick = () => Connect.show(); $('h-mode').before(b); }
 if (!wantDemo && served && sessionId) startLive();
-else if (wantDemo) goDemo('DEMO DATA');
+else if (wantDemo) goDemo(demoJunos ? 'DEMO DATA · JUNOS' : 'DEMO DATA');
 else noSession();
+
+/* =====================================================================================================
+   demo (?demo=junos): a fictional MX edge router. The server stores it as raw Junos XML replies and runs them
+   through the Junos adapter (GET /api/demo/junos); this animates that payload every 3 s: traffic on each port,
+   temperature drift, an aggregation link loss that takes its LLDP and OSPF neighbour with it, and an IX BGP flap,
+   logged in Junos messages-file form.
+   ===================================================================================================== */
+async function startJunosDemo() {
+  let base;
+  try {
+    const r = await fetch('/api/demo/junos', { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    base = await r.json();
+  } catch (e) {
+    $('h-mode').textContent = 'NO SESSION'; $('h-mode').className = 'chip';
+    $('nosess').innerHTML = `<h3>Junos demo needs the server</h3><p>The Juniper sample runs a synthetic MX through the server's Junos adapter. Run <b>python -m netbridgeng</b> and open <b>/?demo=junos</b> from there, or use <b>?demo</b> for the Arista sample.</p><p class="mini">${esc(String(e))}</p>`;
+    $('nosess').style.display = 'block';
+    return;
+  }
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const st0 = base.interfaces.interfaceStatuses, C = clone(base.counters.interfaces);
+  const peers = clone(base.bgp.vrfs.default.peers);
+  const lldp0 = base.lldp.lldpNeighbors, ospf0 = base.ospf.vrfs.default.instList['1'].ospfNeighborEntries;
+  // load by role from the description: [in, out] as a fraction of port speed
+  const LOADS = { TRANSIT: [.46, .14], CORE: [.26, .52], IX: [.33, .11], AGG: [.18, .34], CUST: [.14, .42], MON: [.01, .58], MGMT: [.01, .02] };
+  const load = {};
+  for (const [p, s] of Object.entries(st0)) {
+    const k = (String(s.description).match(/^([A-Z]+):/) || [])[1];
+    const [i, o] = LOADS[k] || [0, 0];
+    load[p] = { i: i * (.85 + Math.random() * .3), o: o * (.85 + Math.random() * .3), ph: Math.random() * 6 };
+  }
+  const ifIndex = p => 500 + Object.keys(st0).indexOf(p);
+  const logs = clone(base.logging || []);
+  const now0 = () => { const d = new Date(); return `${d.toLocaleString('en-US', { month: 'short' })} ${String(d.getDate()).padStart(2, ' ')} ${d.toTimeString().slice(0, 8)}`; };
+  // the adapter reads severity from nothing in the default messages format, so every line is 6 here too
+  const log = (src, mn, msg) => { logs.push({ timestamp: now0(), host: 'edge-01', source: src, facility: '', severity: 6, mnemonic: mn, message: msg }); if (logs.length > 50) logs.shift(); };
+  const LINK = 'xe-2/0/3', IXP = '192.0.2.21', BURST = 'et-0/0/0';
+  const ospfOn = ospf0.find(n => n.interfaceName === LINK);
+  let tick = 0, linkDown = false, lastSnap = 0;
+  function snapshot() {
+    tick++;
+    const now = Date.now() / 1000, dt = lastSnap ? now - lastSnap : 3; lastSnap = now;
+    const cyc = tick % 30;
+    if (cyc === 8 && !linkDown) {
+      linkDown = true;
+      log('mib2d', 'SNMP_TRAP_LINK_DOWN', `ifIndex ${ifIndex(LINK)}, ifAdminStatus up(1), ifOperStatus down(2), ifName ${LINK}`);
+      if (ospfOn) log('rpd', 'RPD_OSPF_NBRDOWN', `OSPF neighbor ${ospfOn.interfaceAddress} (realm ospf-v2 ${LINK}.0 area ${ospfOn.details.areaId}) state changed from Full to Down due to KillNbr (event reason: interface went down)`);
+    }
+    if (cyc === 16 && linkDown) {
+      linkDown = false;
+      log('mib2d', 'SNMP_TRAP_LINK_UP', `ifIndex ${ifIndex(LINK)}, ifAdminStatus up(1), ifOperStatus up(1), ifName ${LINK}`);
+      if (ospfOn) log('rpd', 'RPD_OSPF_NBRUP', `OSPF neighbor ${ospfOn.interfaceAddress} (realm ospf-v2 ${LINK}.0 area ${ospfOn.details.areaId}) state changed from Loading to Full due to LoadDone (event reason: OSPF loading completed)`);
+    }
+    const ix = peers[IXP];
+    if (ix && cyc === 20) {
+      ix.peerState = 'Idle'; ix.upDownTime = now; ix.prefixReceived = ix.prefixAccepted = 0;
+      log('rpd', 'RPD_BGP_NEIGHBOR_STATE_CHANGED', `BGP peer ${IXP} (External AS ${ix.asn}) changed state from Established to Idle (event RecvNotify) (instance master)`);
+    }
+    if (ix && cyc === 25) {
+      const b = base.bgp.vrfs.default.peers[IXP];
+      ix.peerState = 'Established'; ix.upDownTime = now; ix.prefixReceived = b.prefixReceived; ix.prefixAccepted = b.prefixAccepted;
+      log('rpd', 'RPD_BGP_NEIGHBOR_STATE_CHANGED', `BGP peer ${IXP} (External AS ${ix.asn}) changed state from OpenConfirm to Established (event RecvKeepAlive) (instance master)`);
+    }
+    if (tick % 11 === 0) log('mgd', 'UI_CMDLINE_READ_LINE', "User 'netops', command 'show bgp summary '");
+    for (const p of Object.values(peers)) if (p.peerState === 'Established') { const big = p.prefixReceived > 1e5; p.msgReceived += Math.round(Math.random() * (big ? 700 : 30)); p.msgSent += Math.round(Math.random() * 15); }
+
+    const statuses = clone(st0);
+    if (linkDown) Object.assign(statuses[LINK], { linkStatus: 'notconnect', lineProtocolStatus: 'down' });
+    for (const [p, c] of Object.entries(C)) {
+      const s = statuses[p], L = load[p];
+      if (!s || s.linkStatus !== 'connected' || !L || !s.bandwidth) continue;
+      const w = 1 + .35 * Math.sin(tick / 4 + L.ph);
+      let ui = Math.max(0, L.i * w + (Math.random() - .5) * .03), uo = Math.max(0, L.o * w + (Math.random() - .5) * .03);
+      if (p === BURST && tick % 9 < 2) ui = .95;                       // transit-A takes a burst now and then
+      if (linkDown && /^CORE/.test(s.description)) uo *= 1.15;         // agg-02's traffic moves to the cores
+      c.inOctets += ui * s.bandwidth / 8 * dt; c.outOctets += uo * s.bandwidth / 8 * dt;
+      if (ui > .8) c.inDiscards += Math.floor(100 + Math.random() * 600);
+    }
+    const env = clone(base.environment);
+    env.sensors.forEach((sn, i) => { sn.temp = +(sn.temp + Math.sin(tick / 6 + i) * 1.1 + (/Chip|TSen/.test(sn.description) ? 2 * Math.sin(tick / 9) : 0)).toFixed(1); });
+    const cpu = clone(base.proc); cpu.cpuInfo['%Cpu(s)'].idle = 88 - 7 * Math.random();
+    const ver = clone(base.version); ver.uptime += tick * 3;
+    return {
+      meta: { ...base.meta, poll_count: tick, poll_time: 3.4 + Math.random() * .8, timestamp: now, error: null },
+      version: ver,
+      lldp: { lldpNeighbors: lldp0.filter(n => !(linkDown && n.port === LINK)) },
+      interfaces: { interfaceStatuses: statuses },
+      counters: { interfaces: clone(C) },
+      ospf: { vrfs: { default: { instList: { '1': { ospfNeighborEntries: ospf0.filter(n => !(linkDown && n.interfaceName === LINK)) } } } } },
+      bgp: { vrfs: { default: { ...base.bgp.vrfs.default, peers: clone(peers) } } },
+      routes: base.routes,
+      proc: cpu,
+      environment: env,
+      logging: logs.slice(),
+    };
+  }
+  ingest(snapshot());
+  setInterval(() => ingest(snapshot()), 3000);
+}
 
 /* =====================================================================================================
    demo (?demo): a fictional spine in a spine/leaf fabric, ticking every 3 s, with a leaf link loss and a BGP flap now and then
@@ -527,6 +646,14 @@ let condition = 'green';
 // A section whose command failed carries {_error} from the collector and says so.
 const secErr = (d, key) => { const v = get(d, key, null); return v && typeof v === 'object' && v._error ? String(v._error) : null; };
 const noData = (msg, err) => `<div class="nodata${err ? ' err' : ''}">${esc(err ? 'Command failed: ' + err : msg)}</div>`;
+// Some platforms (Junos) report no per-sensor thresholds, fan percent or PSU watts: those stay null in the
+// payload. Thresholds then fall back to a drawing scale only, never to an alert; the box's own status words
+// (sensor / fan / PSU status, chassis alarms) carry the verdict.
+const spOf = s => s.setpoint || 80;
+const alertOf = s => s.alert_limit || (s.setpoint ? s.setpoint + 5 : Infinity);
+const fanPct = f => f.actual_speed != null ? f.actual_speed : /high|full/i.test(f.speed_text || '') ? 85 : /intermediate|medium/i.test(f.speed_text || '') ? 60 : 40;   // spin only
+const fanTxt = f => f.actual_speed != null ? `${f.actual_speed}%` : String((String(f.speed_text || '').match(/\b(normal|intermediate|high|low|full)\b/i) || [])[1] || f.status || '—').toUpperCase();
+const psuTxt = p => p.output_watts != null ? `${Math.round(p.output_watts)}W` : String(p.status || '—').toUpperCase();
 const envReported = env => !!((env.sensors || []).length || (env.fans || []).length || (env.power_supplies || []).length);
 const statusKnown = v => v != null && v !== '' && !/unknown|n\/a|not ?(supported|available|applicable)/i.test(String(v));
 
@@ -536,6 +663,7 @@ function renderAll() {
   $('h-name').textContent = devName(d);
   $('h-model').textContent = ver.modelName || '—';
   $('h-ver').textContent = ver.version || '—';
+  $('h-osk').textContent = meta.platform === 'juniper_junos' ? 'JUNOS ' : 'EOS ';
   const up = ver.uptime || (ver.bootupTimestamp ? Date.now() / 1000 - ver.bootupTimestamp : 0);
   $('h-up').textContent = up ? fmtUp(up) : '—';
   const idle = get(d, 'proc.cpuInfo.%Cpu(s).idle', null);
@@ -554,20 +682,20 @@ function renderAll() {
 
   // ---- engineering
   const env = d.environment || {};
-  const sensors = (env.sensors || []).slice().sort((a, b) => b.temp / b.setpoint - a.temp / a.setpoint);
-  const alertLim = s => s.alert_limit || s.setpoint + 5;
+  const sensors = (env.sensors || []).slice().sort((a, b) => b.temp / spOf(b) - a.temp / spOf(a));
+  const alertLim = alertOf;
   const hot = sensors.filter(s => s.temp >= alertLim(s));
   const envHas = envReported(env);
   $('en-sum').textContent = envHas ? `AMBIENT ${env.ambient_temp ?? '--'}°C · TEMP ${env.temp_status || '—'}` : 'NOT REPORTED';
   let e = '';
   for (const s of sensors.slice(0, 5)) {
-    const f = Math.min(1, s.temp / (s.critical_limit || s.setpoint * 1.3));
-    const c = s.temp >= alertLim(s) ? 'var(--bad)' : s.temp >= s.setpoint || f > .7 ? 'var(--warn)' : 'var(--pri)';
+    const f = Math.min(1, s.temp / (s.critical_limit || spOf(s) * 1.3));
+    const c = s.temp >= alertLim(s) || (s.status && !/^ok$/i.test(s.status)) ? 'var(--bad)' : s.temp >= (s.setpoint || Infinity) || f > .7 ? 'var(--warn)' : 'var(--pri)';
     e += `<div class="row mini"><span>${esc(s.description)}</span><span style="color:${c}">${s.temp.toFixed(1)}°C</span></div><div class="bar"><i style="width:${f * 100}%;background:${c}"></i></div>`;
   }
   const fans = env.fans || [], psus = env.power_supplies || [];
-  e += `<div class="row mini" style="margin-top:4px"><span>FANS</span><span>${fans.map(f => `<span class="${/ok/i.test(f.status) ? 'ok' : 'bad'}">${f.actual_speed}%</span>`).join(' ')}</span></div>`;
-  e += `<div class="row mini"><span>PSU</span><span>${psus.map(p => `<span class="${/ok/i.test(p.status) ? 'ok' : 'bad'}">${Math.round(p.output_watts)}W</span>`).join(' / ')} of ${psus.reduce((a, p) => a + (p.capacity_w || 0), 0)}W</span></div>`;
+  e += `<div class="row mini" style="margin-top:4px"><span>FANS</span><span>${fans.map(f => `<span class="${/ok/i.test(f.status) ? 'ok' : 'bad'}">${fanTxt(f)}</span>`).join(' ')}</span></div>`;
+  e += `<div class="row mini"><span>PSU</span><span>${psus.map(p => `<span class="${/ok/i.test(p.status) ? 'ok' : 'bad'}">${psuTxt(p)}</span>`).join(' / ')}${psus.some(p => p.capacity_w) ? ` of ${psus.reduce((a, p) => a + (p.capacity_w || 0), 0)}W` : ''}</span></div>`;
   $('st-eng').innerHTML = envHas ? e : noData('No sensors, fans or power supplies reported. Common on virtual platforms.', secErr(d, 'environment'));
 
   // ---- drive: interfaces by load
@@ -596,7 +724,9 @@ function renderAll() {
   if (tempBad) (/crit|shut|overheat/i.test(env.temp_status) ? red : yellow).push(`temperature ${env.temp_status}`);
   if (envHas && statusKnown(env.cooling_status) && notOk(env.cooling_status)) yellow.push(`cooling ${env.cooling_status}`);
   const crit = sensors.filter(s => s.critical_limit && s.temp >= s.critical_limit);
+  const badSn = sensors.filter(s => notOk(s.status));
   if (crit.length) red.push(`${crit[0].description} at critical ${crit[0].critical_limit}°C`);
+  else if (badSn.length) yellow.push(`${badSn[0].description} ${badSn[0].status}`);
   else if (hot.length) yellow.push(`${hot[0].description} ${hot[0].temp.toFixed(1)}°C over alert ${alertLim(hot[0])}°C`);
   const badFan = fans.filter(f => notOk(f.status)), badPsu = psus.filter(p => notOk(p.status));
   if (badFan.length) yellow.push(`fan ${badFan.map(f => f.id).join(', ')} ${badFan[0].status}`);
@@ -800,7 +930,7 @@ const Radar = (() => {
     }
 
     // bearing from the local port's place among all front-panel ports (ports wrap the chassis in order)
-    const allPorts = Object.keys(st).filter(p => /^Ethernet/.test(p)).sort(natural);
+    const allPorts = Object.keys(st).filter(isFrontPort).sort(portOrder);
     const nPorts = [...new Set(nei.map(n => n.port))].sort(natural);   // ports with a neighbour, in port order, spread round the circle
     const bearingOf = p => Math.max(0, nPorts.indexOf(p)) / Math.max(nPorts.length, 1) * Math.PI * 2 - Math.PI / 2;
 
@@ -1055,7 +1185,7 @@ const Util = (() => {
   let slide = 1, lastSampleKey = '';
   function update(d) {
     const st = get(d, 'interfaces.interfaceStatuses', {});
-    ports = Object.keys(st).filter(p => /^Ethernet/.test(p)).sort(natural);
+    ports = Object.keys(st).filter(isFrontPort).sort(portOrder);
     const k = ports.join(',') + '|' + ports.map(p => st[p].linkStatus).join(',');
     if (k !== key0) { key0 = k; layout(st); }
     const sk = ports.map(p => (HIST[p] || []).length).join(',') + JSON.stringify(RATES[ports[0]] || {});
@@ -1230,7 +1360,7 @@ const Therm = (() => {
   const sKey = s => `${s.id}:${s.description}`;
   function groupOf(s) {
     const d = (s.description || '').toLowerCase();
-    if (s.psu || /psu|power ?supply|pwr/.test(d)) return 'psu';
+    if (s.psu != null || /psu|power ?supply|pwr|\bpem\b|\bpsm\b/.test(d)) return 'psu';
     if (/cpu/.test(d)) return 'cpu';
     if (/stat|fe\d|fap|jericho|ramon|chip|asic|switch|fabric|tomahawk|trident|sand/.test(d)) return 'chip';
     if (/front|inlet|intake|ambient/.test(d)) return 'front';
@@ -1242,21 +1372,29 @@ const Therm = (() => {
   function build(env) {
     clear(dyn); sensors = []; fans = []; psus = [];
     const S = env.sensors || [], F = env.fans || [], P = env.power_supplies || [];
-    // PSUs: rear left, stacked along x
+    // PSUs: rear left, stacked along x. Two PSUs get the full 3.2 pitch; a chassis with many (MX PEMs)
+    // shares about half the rear wall so the fans still fit beside them.
+    const pPitch = Math.min(3.2, BX * .5 / Math.max(1, P.length));
     P.forEach((p, i) => {
-      const g = new THREE.Group(); g.position.set(-BX / 2 + 1.8 + i * 3.2, 0, -BZ / 2 + 1.9); dyn.add(g);
-      const box = new THREE.Mesh(new THREE.BoxGeometry(2.8, BY * .8, 3.2), new THREE.MeshStandardMaterial({ color: 0x14242c, metalness: .6, roughness: .4, emissive: 0xffb340, emissiveIntensity: 0 }));
+      const g = new THREE.Group(); g.position.set(-BX / 2 + 1.8 + i * pPitch, 0, -BZ / 2 + 1.9); dyn.add(g);
+      const box = new THREE.Mesh(new THREE.BoxGeometry(pPitch * .875, BY * .8, 3.2), new THREE.MeshStandardMaterial({ color: 0x14242c, metalness: .6, roughness: .4, emissive: 0xffb340, emissiveIntensity: 0 }));
       box.position.y = BY * .4; g.add(box);
       g.add(Object.assign(new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), new THREE.LineBasicMaterial({ color: 0xffb340, transparent: true, opacity: .7 })), {}));
       g.children[1].position.copy(box.position);
       const lb = label(`PSU${p.id}`, '', '#ffb340', 20); lb.position.set(0, BY + .4, 0); g.add(lb);
       psus.push({ p, g, box, lb, key: p.id, lastText: '' });
     });
-    // fans: rear wall, right of the PSUs
-    const fx0 = -BX / 2 + 1.8 + P.length * 3.2 + 1, fx1 = BX / 2 - 1.2;
+    // fans: rear wall, right of the PSUs, in as many rows as gives the biggest fan (4 fans: one row;
+    // an MX with 4 trays x 4 fans: a grid). Each fan is scaled to its cell.
+    const fx0 = -BX / 2 + 1.8 + P.length * pPitch + .6, fx1 = BX / 2 - .8, fW = Math.max(1, fx1 - fx0), fH = BY * 1.4;
+    let fRows = 1, fCell = 0;
+    for (let r = 1; r <= 4; r++) { const c = Math.ceil(F.length / r), cell = Math.min(fW / c, fH / r); if (cell > fCell + .01) { fCell = cell; fRows = r; } }
+    const fCols = Math.ceil(F.length / fRows), fScale = Math.min(1, fCell / 2.1);
     F.forEach((f, i) => {
-      const x = F.length > 1 ? fx0 + i * (fx1 - fx0) / (F.length - 1) : (fx0 + fx1) / 2;
-      const g = new THREE.Group(); g.position.set(x, BY / 2, -BZ / 2 - .05); dyn.add(g);
+      const col = i % fCols, row = Math.floor(i / fCols);
+      const x = fCols > 1 ? fx0 + fCell / 2 + col * (fW - fCell) / (fCols - 1) : (fx0 + fx1) / 2;
+      const y = fRows > 1 ? BY / 2 + fH / 2 - fCell / 2 - row * (fH - fCell) / (fRows - 1) : BY / 2;
+      const g = new THREE.Group(); g.position.set(x, y, -BZ / 2 - .05); g.scale.setScalar(fScale); dyn.add(g);
       const ring = new THREE.Mesh(new THREE.TorusGeometry(1.05, .08, 8, 32), new THREE.MeshBasicMaterial({ color: 0x56e0ff })); g.add(ring);
       const rotor = new THREE.Group(); g.add(rotor);
       for (let b = 0; b < 5; b++) { const bl = new THREE.Mesh(new THREE.BoxGeometry(.18, .9, .05), new THREE.MeshBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: .8 })); bl.position.y = .45; const piv = new THREE.Group(); piv.rotation.z = b / 5 * Math.PI * 2; bl.rotation.y = .5; piv.add(bl); rotor.add(piv); }
@@ -1336,17 +1474,19 @@ const Therm = (() => {
       if (t + sub !== x.lastText) { x.lastText = t + sub; const col = '#' + tempColor(x.s, x.s.temp).getHexString(); const n = label(t, sub, col, 20); x.lb.material.map && x.lb.material.map.dispose(); x.lb.material = n.material; x.lb.scale.copy(n.scale); }
     }
     for (const x of psus) {
-      const t = `PSU${x.p.id} ${Math.round(x.p.output_watts)}W`, sub = `${x.p.status} · ${Math.round(x.p.output_watts / (x.p.capacity_w || 1) * 100)}% of ${x.p.capacity_w}W`;
+      const t = `PSU${x.p.id} ${psuTxt(x.p)}`, sub = x.p.output_watts != null && x.p.capacity_w ? `${x.p.status} · ${Math.round(x.p.output_watts / x.p.capacity_w * 100)}% of ${x.p.capacity_w}W` : (x.p.name || x.p.status || '');
       if (t + sub !== x.lastText) { x.lastText = t + sub; const n = label(t, sub, /ok/i.test(x.p.status) ? '#ffb340' : '#ff4b4b', 18); x.lb.material.map && x.lb.material.map.dispose(); x.lb.material = n.material; x.lb.scale.copy(n.scale); }
     }
     for (const x of fans) {
-      const t = `FAN ${x.f.id} ${x.f.actual_speed}%`;
+      const t = `FAN ${x.f.id} ${fanTxt(x.f)}`;
       if (t !== x.lastText) { x.lastText = t; const n = label(t, x.f.status, /ok/i.test(x.f.status) ? '#9ff0ff' : '#ff4b4b', 18); x.lb.material.map && x.lb.material.map.dispose(); x.lb.material = n.material; x.lb.scale.copy(n.scale); }
     }
     [...sensors].sort((a, b) => b.s.temp / (b.s.setpoint || 99) - a.s.temp / (a.s.setpoint || 99)).forEach((x, i) => x.rank = i);
     // summary: the sensor closest to (or furthest past) its setpoint
     let w = null; for (const s of S) { const m = (s.setpoint || 999) - s.temp; if (!w || m < w.m) w = { s, m }; }
-    summary = w ? `${S.length} SENSORS · ${w.s.description.toUpperCase()} ${w.s.temp.toFixed(1)}°C · ${w.m < 0 ? `${(-w.m).toFixed(1)}° OVER SETPOINT` : `${w.m.toFixed(1)}° TO SETPOINT`} · ${((w.s.alert_limit || w.s.setpoint + 5) - w.s.temp).toFixed(1)}° TO ALERT` : 'no environment data';
+    const hot0 = S.slice().sort((a, b) => b.temp - a.temp)[0];
+    if (S.length && !S.some(s => s.setpoint)) summary = `${S.length} SENSORS · HOTTEST ${hot0.description.toUpperCase()} ${hot0.temp.toFixed(1)}°C · NO THRESHOLDS REPORTED`;
+    else summary = w ? `${S.length} SENSORS · ${w.s.description.toUpperCase()} ${w.s.temp.toFixed(1)}°C · ${w.m < 0 ? `${(-w.m).toFixed(1)}° OVER SETPOINT` : `${w.m.toFixed(1)}° TO SETPOINT`} · ${((w.s.alert_limit || w.s.setpoint + 5) - w.s.temp).toFixed(1)}° TO ALERT` : 'no environment data';
   }
 
   const v3 = new THREE.Vector3();
@@ -1370,14 +1510,15 @@ const Therm = (() => {
     }
     let fanAvg = 0;
     for (const x of fans) {
-      const sp = (x.f.actual_speed || 0) / 100; fanAvg += sp;
+      const sp = fanPct(x.f) / 100; fanAvg += sp;
       x.rotor.rotation.z += dt * (2 + sp * 30);
       x.ring.material.color.setHex(/ok/i.test(x.f.status) ? 0x56e0ff : 0xff4b4b);
       x.lb.position.set(0, -1.9, -.4);
+      x.lb.visible = fans.length <= 6 || !/ok/i.test(x.f.status);   // a full MX fan wall labels only the fans in trouble
     }
     fanAvg = fans.length ? fanAvg / fans.length : .4;
     for (const x of psus) {
-      const u = (x.p.output_watts || 0) / (x.p.capacity_w || 1);
+      const u = x.p.output_watts != null ? x.p.output_watts / (x.p.capacity_w || 1) : (/ok/i.test(x.p.status) ? .3 : 0);
       x.box.material.emissiveIntensity = .15 + u * 1.4 + .08 * Math.sin(t * 3 + x.p.id);
       x.box.material.emissive.setHex(/ok/i.test(x.p.status) ? 0xffb340 : 0xff4b4b);
     }
@@ -1418,7 +1559,7 @@ const Therm = (() => {
     const el = $('scan'), x = sensors.find(q => q.key === k);
     if (!x) { el.style.display = 'none'; return; }
     const s = x.s, h = THIST[k] || [], d = h.length > 1 ? h[0] - h[h.length - 1] : 0;
-    const rows = [['TEMP', `${s.temp.toFixed(1)}°C`], ['SETPOINT', `${s.setpoint}°C · ${(s.setpoint - s.temp).toFixed(1)}° headroom`],
+    const rows = [['TEMP', `${s.temp.toFixed(1)}°C`], ['SETPOINT', s.setpoint ? `${s.setpoint}°C · ${(s.setpoint - s.temp).toFixed(1)}° headroom` : 'not reported'], ...(s.status ? [['STATUS', esc(s.status)]] : []),
       ['ALERT', `${s.alert_limit ?? '—'}°C`], ['CRITICAL', `${s.critical_limit ?? '—'}°C`],
       ['TREND', h.length > 1 ? `${d >= 0 ? '+' : ''}${d.toFixed(1)}° over ${h.length} polls` : '—'],
       ['RANGE', h.length ? `${Math.min(...h).toFixed(1)} – ${Math.max(...h).toFixed(1)}°C` : '—'], ['PLACED AS', groupOf(s).toUpperCase()]];
@@ -1765,7 +1906,7 @@ const Ospf = (() => {
   const hubG = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x3dffa0, transparent: true, opacity: .4, depthWrite: false, blending: THREE.AdditiveBlending })); hubG.scale.set(11, 11, 1); core.add(hubG);
   const routeCol = new THREE.Group(); routeCol.position.y = .8; core.add(routeCol);
   const coreL = label('—', '', '#9ff0ff', 24); core.add(coreL); let coreText = '';
-  const RT = [['ospfIntraArea', 'intra', 0x3dffa0], ['ospfInterArea', 'inter', 0x56e0ff], ['ospfExternal1', 'ext1', 0xc49bff], ['ospfExternal2', 'ext2', 0xffb340], ['ospfNssaExternal1', 'nssa1', 0xff7ad9], ['ospfNssaExternal2', 'nssa2', 0xff9a6a]];
+  const RT = [['ospfTotal', 'ospf', 0x3dffa0], ['ospfIntraArea', 'intra', 0x3dffa0], ['ospfInterArea', 'inter', 0x56e0ff], ['ospfExternal1', 'ext1', 0xc49bff], ['ospfExternal2', 'ext2', 0xffb340], ['ospfNssaExternal1', 'nssa1', 0xff7ad9], ['ospfNssaExternal2', 'nssa2', 0xff9a6a]];
   let rtSig = '';
 
   // ---- areas and neighbours
@@ -2024,11 +2165,13 @@ const Console = (() => {
   // ---- demo shell: a few show commands answered from the data on screen
   let demoStarted = false;
   const host = () => (D ? (get(D, 'version.hostname', '') || shortName(get(D, 'meta.hostname', 'switch'))) : 'switch');
-  const prompt = () => term.write(`\r\n\x1b[96m${host()}\x1b[0m>`);
+  const isJunos = () => get(D, 'meta.platform', '') === 'juniper_junos';
+  const prompt = () => term.write(`\r\n\x1b[96m${isJunos() ? 'netops@' : ''}${host()}\x1b[0m>`);
   function startDemo() {
     demoStarted = true; $('t-mode').textContent = 'DEMO SHELL · sample data'; status('DEMO', 'wait');
     term.write('\x1b[33mDemo mode: this shell answers from the sample data on screen, not a device.\x1b[0m\r\n');
-    term.write('Try: show version · show lldp neighbors · show ip bgp summary · show ip ospf neighbor\r\n     show interfaces status · show interfaces counters rates · show system environment temperature');
+    term.write(isJunos() ? 'Try: show version · show lldp neighbors · show bgp summary · show ospf neighbor\r\n     show interfaces terse · show interfaces rates · show chassis environment'
+      : 'Try: show version · show lldp neighbors · show ip bgp summary · show ip ospf neighbor\r\n     show interfaces status · show interfaces counters rates · show system environment temperature');
     prompt();
   }
   function demoInput(d) {
@@ -2042,7 +2185,7 @@ const Console = (() => {
   const pad = (v, n) => String(v ?? '').padEnd(n).slice(0, n);
   const lpad = (v, n) => String(v ?? '').padStart(n);
   const CMDS = [
-    ['show version', () => { const v = D.version || {}; return [`Arista ${v.modelName || ''}`, `Serial number: ${v.serialNumber || '—'}`, `Software image version: ${v.version || '—'}`, `Uptime: ${fmtUp(v.uptime || 0)}`, `Total memory: ${v.memTotal || '—'} kB`, `Free memory: ${v.memFree || '—'} kB`]; }],
+    ['show version', () => { const v = D.version || {}; return [`${v.vendor || (get(D, 'meta.platform', '') === 'juniper_junos' ? 'Juniper' : 'Arista')} ${v.modelName || ''}`, `Serial number: ${v.serialNumber || '—'}`, `Software image version: ${v.version || '—'}`, `Uptime: ${fmtUp(v.uptime || 0)}`, `Total memory: ${v.memTotal || '—'} kB`, `Free memory: ${v.memFree || '—'} kB`]; }],
     ['show lldp neighbors', () => ['Port          Neighbor Device ID                    Neighbor Port ID    TTL', '------------- ------------------------------------- ------------------- ---', ...get(D, 'lldp.lldpNeighbors', []).map(n => `${pad(shortPort(n.port), 13)} ${pad(n.neighborDevice, 37)} ${pad(n.neighborPort, 19)} ${n.ttl ?? ''}`)]],
     ['show ip bgp summary', () => { const v = get(D, 'bgp.vrfs.default', {}); return [`BGP summary information for VRF default`, `Router identifier ${v.routerId || '—'}, local AS number ${v.asn || '—'}`, `  Neighbor         V  AS           MsgRcvd   MsgSent  InQ OutQ  Up/Down State   PfxRcd PfxAcc`,
       ...Object.entries(v.peers || {}).map(([ip, p]) => `  ${pad(ip, 16)} 4  ${pad(p.asn, 12)} ${lpad(p.msgReceived ?? '', 9)} ${lpad(p.msgSent ?? '', 9)} ${lpad(p.inMsgQueue ?? 0, 4)} ${lpad(p.outMsgQueue ?? 0, 4)} ${lpad(fmtUp(+p.upDownTime > 1e9 ? Date.now() / 1000 - p.upDownTime : p.upDownTime), 8)} ${pad(p.peerState === 'Established' ? 'Estab' : p.peerState, 7)} ${lpad(p.peerState === 'Established' ? p.prefixReceived : '', 6)} ${lpad(p.peerState === 'Established' ? p.prefixAccepted : '', 6)}`)]; }],
@@ -2050,14 +2193,19 @@ const Console = (() => {
       return ['Neighbor ID     Pri State            Address         Interface', ...l.map(o => `${pad(o.routerId, 15)} ${lpad(o.priority ?? '', 3)} ${pad(`${String(o.adjacencyState).toUpperCase()}/${o.drState || ''}`, 16)} ${pad(o.interfaceAddress, 15)} ${o.interfaceName}`)]; }],
     ['show interfaces status', () => { const st = get(D, 'interfaces.interfaceStatuses', {}); return ['Port       Name                       Status       Speed  Type', ...Object.keys(st).sort(natural).map(p => `${pad(shortPort(p), 10)} ${pad(st[p].description, 26)} ${pad(st[p].linkStatus, 12)} ${pad(fmtSpeed(st[p].bandwidth), 6)} ${st[p].interfaceType || ''}`)]; }],
     ['show interfaces counters rates', () => { const st = get(D, 'interfaces.interfaceStatuses', {}); return ['Port       Name                         In Mbps   %   Out Mbps   %', ...Object.keys(st).sort(natural).filter(p => RATES[p]).map(p => { const r = RATES[p], bw = st[p].bandwidth || 1; return `${pad(shortPort(p), 10)} ${pad(st[p].description, 26)} ${lpad((r.in / 1e6).toFixed(1), 9)} ${lpad((r.in / bw * 100).toFixed(1), 5)} ${lpad((r.out / 1e6).toFixed(1), 9)} ${lpad((r.out / bw * 100).toFixed(1), 5)}`; })]; }],
-    ['show system environment temperature', () => ['Sensor  Description                       Temp    Setpoint  Alert  Critical', ...get(D, 'environment.sensors', []).map(sn => `${lpad(sn.id, 6)}  ${pad(sn.description, 32)} ${lpad(sn.temp.toFixed(1), 6)}C ${lpad(sn.setpoint, 8)}C ${lpad(sn.alert_limit ?? '', 5)}C ${lpad(sn.critical_limit ?? '', 7)}C`)]],
+    ['show system environment temperature', () => ['Sensor  Description                       Temp    Setpoint  Alert  Critical', ...get(D, 'environment.sensors', []).map(sn => `${lpad(sn.id, 6)}  ${pad(sn.description, 32)} ${lpad(sn.temp.toFixed(1), 6)}C ${lpad(sn.setpoint ?? '—', 8)}C ${lpad(sn.alert_limit ?? '', 5)}C ${lpad(sn.critical_limit ?? '', 7)}C`)]],
   ];
+  // Junos names for the same answers (the output layout stays the bridge's own)
+  const JUNOS = { 'show bgp summary': 'show ip bgp summary', 'show ospf neighbor': 'show ip ospf neighbor', 'show interfaces terse': 'show interfaces status',
+    'show interfaces rates': 'show interfaces counters rates', 'show chassis environment': 'show system environment temperature', 'show version': 'show version', 'show lldp neighbors': 'show lldp neighbors' };
+  const cmds = () => isJunos() ? Object.entries(JUNOS).map(([j, e]) => [j, CMDS.find(c => c[0] === e)[1]]) : CMDS;
   function run(line) {
     if (!line) return;
+    line = line.replace(/\s*\|\s*no-more\s*$/i, '');
     if (/^(exit|quit|logout)$/i.test(line)) { hide(); return; }
-    if (/^(\?|help)$/i.test(line)) { term.write(CMDS.map(c => '  ' + c[0]).join('\r\n')); return; }
+    if (/^(\?|help)$/i.test(line)) { term.write(cmds().map(c => '  ' + c[0]).join('\r\n')); return; }
     const w = line.toLowerCase().split(/\s+/);
-    const hit = CMDS.filter(([c]) => { const cw = c.split(' '); return w.length === cw.length && w.every((x, i) => cw[i].startsWith(x)); });
+    const hit = cmds().filter(([c]) => { const cw = c.split(' '); return w.length === cw.length && w.every((x, i) => cw[i].startsWith(x)); });
     if (hit.length !== 1 || !D) { term.write(hit.length > 1 ? '% Ambiguous command' : '% Invalid input'); return; }
     term.write(hit[0][1]().join('\r\n'));
   }
@@ -2089,8 +2237,8 @@ function viewEmpty() {
   const d = D, ospfN = Object.values(get(d, 'ospf.vrfs.default.instList', {})).reduce((a, i) => a + (i.ospfNeighborEntries || []).length, 0);
   const V = {
     lldp: [get(d, 'lldp.lldpNeighbors', []).length, 'No LLDP neighbors', 'The device reports none. LLDP may be disabled, or nothing connected runs it.', 'lldp'],
-    util: [Object.keys(get(d, 'interfaces.interfaceStatuses', {})).filter(p => /^Ethernet/.test(p)).length, 'No interfaces', 'The device reported no Ethernet interfaces.', 'interfaces'],
-    therm: [envReported(d.environment || {}), 'No environment data', 'No sensors, fans or power supplies reported. Common on virtual platforms such as vEOS and cEOS.', 'environment'],
+    util: [Object.keys(get(d, 'interfaces.interfaceStatuses', {})).filter(isFrontPort).length, 'No interfaces', 'The device reported no front-panel Ethernet interfaces.', 'interfaces'],
+    therm: [envReported(d.environment || {}), 'No environment data', 'No sensors, fans or power supplies reported. Common on virtual platforms such as vEOS, cEOS and vMX/vQFX.', 'environment'],
     bgp: [Object.keys(get(d, 'bgp.vrfs.default.peers', {})).length, 'No BGP sessions', 'BGP is not configured on this device, or has no neighbors in the default VRF.', 'bgp'],
     ospf: [ospfN, 'No OSPF adjacencies', 'OSPF is not configured on this device, or has no neighbors in the default VRF.', 'ospf'],
   }[view];
@@ -2130,7 +2278,7 @@ $('detail-btn').onclick = e => { e.stopPropagation(); setDetail(!detailOn); };
 const GROUP_NAME = { chip: 'Switch chip', cpu: 'CPU', psu: 'Power supplies', front: 'Front / inlet', rear: 'Rear / outlet', board: 'Board' };
 function sensorGroup(sn) {
   const d = (sn.description || '').toLowerCase();
-  if (sn.psu || /psu|power ?supply|pwr/.test(d)) return 'psu';
+  if (sn.psu != null || /psu|power ?supply|pwr|\bpem\b|\bpsm\b/.test(d)) return 'psu';
   if (/cpu/.test(d)) return 'cpu';
   if (/stat|fe\d|fap|jericho|ramon|chip|asic|switch|fabric|tomahawk|trident|sand/.test(d)) return 'chip';
   if (/front|inlet|intake|ambient/.test(d)) return 'front';
@@ -2154,22 +2302,22 @@ function renderDetail(d) {
     const hot = list[0];
     h += `<h4>${GROUP_NAME[g]}<small>${list.length} sensor${list.length > 1 ? 's' : ''} · hottest ${esc(hot.description)} ${hot.temp.toFixed(1)}°C</small></h4>`;
     for (const sn of list) {
-      const crit = sn.critical_limit || (sn.setpoint || 80) * 1.25, al = sn.alert_limit || (sn.setpoint || 80) + 5, sp = sn.setpoint || 0;
+      const crit = sn.critical_limit || spOf(sn) * 1.25, al = alertOf(sn), sp = sn.setpoint || 0, noLim = !sn.setpoint;
       const pc = v => Math.max(0, Math.min(100, v / crit * 100));
-      const col = sn.temp >= al ? 'var(--bad)' : sn.temp >= sp ? 'var(--warn)' : sn.temp / (sp || 99) > .85 ? '#3dffa0' : 'var(--pri)';
+      const col = sn.temp >= al || (sn.status && !/^ok$/i.test(sn.status)) ? 'var(--bad)' : noLim ? 'var(--pri)' : sn.temp >= sp ? 'var(--warn)' : sn.temp / (sp || 99) > .85 ? '#3dffa0' : 'var(--pri)';
       const hist = THIST[`${sn.id}:${sn.description}`] || [];
       const lo = hist.length ? Math.min(...hist) - .5 : sn.temp - 1, hi = hist.length ? Math.max(...hist) + .5 : sn.temp + 1;
       const trend = hist.length > 1 ? hist[0] - hist[hist.length - 1] : 0;
-      const head = sn.temp >= sp ? `<span class="warn">+${(sn.temp - sp).toFixed(1)}° over set</span> · ${(al - sn.temp).toFixed(1)}° to alert` : `${(sp - sn.temp).toFixed(1)}° to setpoint`;
+      const head = noLim ? `status ${esc(sn.status || '—')} · no thresholds` : sn.temp >= sp ? `<span class="warn">+${(sn.temp - sp).toFixed(1)}° over set</span> · ${(al - sn.temp).toFixed(1)}° to alert` : `${(sp - sn.temp).toFixed(1)}° to setpoint`;
       h += `<div class="trow"><span class="nm" title="sensor ${esc(sn.id)}">${esc(sn.description)}</span><span class="t" style="color:${col}">${sn.temp.toFixed(1)}°C</span>` +
         `<span class="tbar" title="setpoint ${sp}°C · alert ${al}°C · critical ${crit}°C"><i style="width:${pc(sn.temp)}%;background:${col}"></i>` +
-        `<b style="left:${pc(sp)}%;background:#ffb340"></b><b style="left:${pc(al)}%;background:#ff7a3a"></b><b style="left:calc(${pc(crit)}% - 2px);background:#ff4b4b"></b></span>` +
+        `${noLim ? '' : `<b style="left:${pc(sp)}%;background:#ffb340"></b><b style="left:${pc(al)}%;background:#ff7a3a"></b><b style="left:calc(${pc(crit)}% - 2px);background:#ff4b4b"></b>`}</span>` +
         `<span class="hd">${head}</span><span title="${hist.length > 1 ? (trend >= 0 ? '+' : '') + trend.toFixed(1) + '° over ' + hist.length + ' polls' : ''}">${spark(hist, lo, hi)}</span></div>`;
     }
   }
   const fans = env.fans || [], psus = env.power_supplies || [];
-  if (fans.length) h += `<h4>Fans<small>cooling ${esc(env.cooling_status || '—')} · airflow ${esc(String(env.airflow || '—').replace(/([a-z])([A-Z])/g, '$1 $2'))}</small></h4>` + fans.map(f => `<div class="trow"><span class="nm">Fan ${esc(f.id)}</span><span class="t ${/ok/i.test(f.status) ? 'ok' : 'bad'}">${f.actual_speed}%</span><span class="tbar"><i style="width:${f.actual_speed}%;background:var(--pri)"></i></span><span class="hd">${esc(f.status)} · set ${f.config_speed}%</span><span class="hd">${esc(f.stability || '')}</span></div>`).join('');
-  if (psus.length) h += `<h4>PSUs</h4>` + psus.map(p => `<div class="trow"><span class="nm">PSU${esc(p.id)} ${esc(p.model || '')}</span><span class="t ${/ok/i.test(p.status) ? 'ok' : 'bad'}">${Math.round(p.output_watts)}W</span><span class="tbar"><i style="width:${Math.min(100, p.output_watts / (p.capacity_w || 1) * 100)}%;background:var(--warn)"></i></span><span class="hd">${esc(p.status)} · of ${p.capacity_w}W</span><span class="hd">${p.input_amps ?? '—'}A in</span></div>`).join('');
+  if (fans.length) h += `<h4>Fans<small>cooling ${esc(env.cooling_status || '—')} · airflow ${esc(String(env.airflow || '—').replace(/([a-z])([A-Z])/g, '$1 $2'))}</small></h4>` + fans.map(f => `<div class="trow"><span class="nm">Fan ${esc(f.id)}</span><span class="t ${/ok/i.test(f.status) ? 'ok' : 'bad'}">${fanTxt(f)}</span><span class="tbar"><i style="width:${fanPct(f)}%;background:var(--pri)"></i></span><span class="hd">${esc(f.status)}${f.config_speed != null ? ` · set ${f.config_speed}%` : f.speed_text ? ` · ${esc(f.speed_text)}` : ''}</span><span class="hd">${esc(f.stability || '')}</span></div>`).join('');
+  if (psus.length) h += `<h4>PSUs</h4>` + psus.map(p => `<div class="trow"><span class="nm">PSU${esc(p.id)} ${esc(p.model || '')}</span><span class="t ${/ok/i.test(p.status) ? 'ok' : 'bad'}">${psuTxt(p)}</span><span class="tbar"><i style="width:${p.output_watts != null ? Math.min(100, p.output_watts / (p.capacity_w || 1) * 100) : 0}%;background:var(--warn)"></i></span><span class="hd">${esc(p.status)}${p.capacity_w ? ` · of ${p.capacity_w}W` : p.name ? ` · ${esc(p.name)}` : ''}</span><span class="hd">${p.input_amps ?? '—'}A in</span></div>`).join('');
   const el = $('tdetail'), y = el.scrollTop; el.innerHTML = h; el.scrollTop = y;   // keep the reader's place across polls
 }
 </script>

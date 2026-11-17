@@ -1,0 +1,14 @@
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/21.4R3/junos">
+    <environment-information xmlns="http://xml.juniper.net/junos/21.4R3/junos-chassis">
+        <environment-item><name>FPC 0 Power Supply 0</name><class>Power</class><status>OK</status></environment-item>
+        <environment-item><name>FPC 0 Power Supply 1</name><status>OK</status></environment-item>
+        <environment-item><name>FPC 0 Intake Temp Sensor</name><class>Temp</class><status>OK</status><temperature junos:celsius="27">27 degrees C / 80 degrees F</temperature></environment-item>
+        <environment-item><name>FPC 0 Exhaust Temp Sensor</name><status>OK</status><temperature junos:celsius="38">38 degrees C / 100 degrees F</temperature></environment-item>
+        <environment-item><name>FPC 0 CPU Die Temp Sensor</name><status>OK</status><temperature junos:celsius="52">52 degrees C / 125 degrees F</temperature></environment-item>
+        <environment-item><name>FPC 0 Switch ASIC Die Temp Sensor</name><status>OK</status><temperature junos:celsius="61">61 degrees C / 141 degrees F</temperature></environment-item>
+        <environment-item><name>FPC 0 Power Supply 0 Temp Sensor</name><status>OK</status><temperature junos:celsius="33">33 degrees C / 91 degrees F</temperature></environment-item>
+        <environment-item><name>FPC 0 Fan Tray 0 Fan 0</name><class>Fans</class><status>OK</status><comment>Spinning at normal speed</comment></environment-item>
+        <environment-item><name>FPC 0 Fan Tray 1 Fan 0</name><status>OK</status><comment>Spinning at normal speed</comment></environment-item>
+        <environment-item><name>FPC 0 Fan Tray 2 Fan 0</name><status>Check</status><comment>Spinning at high speed</comment></environment-item>
+    </environment-information>
+</rpc-reply>
